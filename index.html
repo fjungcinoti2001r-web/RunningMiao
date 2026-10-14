@@ -372,7 +372,7 @@
             <h2 class="tips-title" id="tips-title">滑动，躲开障碍</h2>
             <ul class="tips-list">
                 <li><span class="tips-icon">↔</span><span><strong>左右滑动</strong><br>切换三条跑道，躲开迎面而来的货车和路障。</span></li>
-                <li><span class="tips-icon">↑ ↓</span><span><strong>上下滑动</strong><br>向上跳过矮障碍，向下滑铲躲开高障碍。</span></li>
+                <li><span class="tips-icon">↑ ↓</span><span><strong>上下滑动</strong><br>向上跳过矮路障，向下滑铲钻过高横杆。</span></li>
                 <li><span class="tips-icon">🔥</span><span><strong>火焰技能 · 双击屏幕</strong><br>点燃火焰；有效期间遇到碰撞时，可替你抵挡一次。</span></li>
             </ul>
             <p class="tips-footnote">沿途收集金币，灵活变道，看看自己能跑多远。</p>
@@ -636,7 +636,6 @@ const player = {
     flameCooldown: 0,
 
     // 道具计时
-    sneakersTimer: 0,
     doubleCoinsTimer: 0,
 
     // 碰撞后的短暂缓冲，避免在障碍物命中区重复触发
@@ -663,7 +662,6 @@ function resetGame() {
     player.onTrain = false;
     player.flameTimer = 0;
     player.flameCooldown = 0;
-    player.sneakersTimer = 0;
     player.doubleCoinsTimer = 0;
     player.stumbleTimer = 0;
 
@@ -691,11 +689,14 @@ function activateFlame() {
 }
 
 const CHUNK_PATTERNS = [
+    { type: 'HURDLE' },
     { type: 'BLOCKED_SIDES' },
     { type: 'CENTER_TRAIN' },
+    { type: 'HIGH_BARRIER' },
+    { type: 'HURDLE' },
     { type: 'ALTERNATING' },
     { type: 'RAMP_TO_ROOF' },
-    { type: 'ALTERNATING' },
+    { type: 'HURDLE' },
     { type: 'BLOCKED_SIDES' },
     { type: 'POWERUP_REWARD' }
 ];
@@ -709,6 +710,14 @@ function spawnChunk(spawnZ) {
         for (let i = 0; i < 5; i++) {
             pickups.push({ track: 0, type: 'COIN', z: spawnZ + i * 36, y: 22 });
         }
+    } else if (pattern.type === 'HURDLE') {
+        const lane = [-1, 0, 1][chunkIdx % 3];
+        obstacles.push({ track: lane, type: 'HURDLE', z: spawnZ, length: 15, speed: 0 });
+        const coinLane = lane === 0 ? 1 : 0;
+        pickups.push({ track: coinLane, type: 'COIN', z: spawnZ + 28, y: 22 });
+    } else if (pattern.type === 'HIGH_BARRIER') {
+        const lane = [-1, 0, 1][chunkIdx % 3];
+        obstacles.push({ track: lane, type: 'HIGH_BARRIER', z: spawnZ, length: 15, speed: 0 });
     } else if (pattern.type === 'BLOCKED_SIDES') {
         obstacles.push({ track: -1, type: 'HURDLE', z: spawnZ, length: 15, speed: 0 });
         obstacles.push({ track: 1, type: 'HIGH_BARRIER', z: spawnZ, length: 15, speed: 0 });
@@ -728,9 +737,7 @@ function spawnChunk(spawnZ) {
         obstacles.push({ track: 0, type: 'HIGH_BARRIER', z: spawnZ + 60, length: 15, speed: 0 });
         obstacles.push({ track: 1, type: 'TRAIN', z: spawnZ, length: 300, speed: 60 });
     } else if (pattern.type === 'POWERUP_REWARD') {
-        const buffs = ['DOUBLE_COINS', 'SNEAKERS', 'DOUBLE_COINS'];
-        const chosen = buffs[Math.floor(Math.random() * buffs.length)];
-        pickups.push({ track: 0, type: chosen, z: spawnZ + 30, y: 35 });
+        pickups.push({ track: 0, type: 'DOUBLE_COINS', z: spawnZ + 30, y: 35 });
     }
 }
 
@@ -744,7 +751,7 @@ function handleAction(act) {
     } else if (act === 'JUMP') {
         const groundHeight = player.onTrain ? TRAIN_HEIGHT : 0;
         if (player.y <= groundHeight + 6) {
-            player.vy = player.sneakersTimer > 0 ? 820 : 640;
+            player.vy = 640;
             player.state = 'JUMP';
             player.rollTimer = 0;
             playAudio('jump');
@@ -823,7 +830,6 @@ function update(dt) {
         updateBuffUI();
     }
     if (player.flameCooldown > 0) player.flameCooldown = Math.max(0, player.flameCooldown - dt);
-    if (player.sneakersTimer > 0) player.sneakersTimer = Math.max(0, player.sneakersTimer - dt);
     if (player.doubleCoinsTimer > 0) player.doubleCoinsTimer = Math.max(0, player.doubleCoinsTimer - dt);
 
     if (player.state === 'ROLL') {
@@ -889,9 +895,6 @@ function update(dt) {
                 if (item.type === 'COIN') {
                     coins += (player.doubleCoinsTimer > 0 ? 2 : 1);
                     playAudio('coin');
-                } else if (item.type === 'SNEAKERS') {
-                    player.sneakersTimer = 15;
-                    playAudio('unlock');
                 } else if (item.type === 'DOUBLE_COINS') {
                     player.doubleCoinsTimer = 15;
                     playAudio('unlock');
@@ -961,13 +964,6 @@ function updateBuffUI() {
             <div class="buff-pill" style="border-color:#fb923c;">
                 <span style="font-size:16px;">🔥</span>
                 <span>火焰 (${Math.ceil(player.flameTimer)}s)</span>
-            </div>`;
-    }
-    if (player.sneakersTimer > 0) {
-        buffContainer.innerHTML += `
-            <div class="buff-pill" style="border-color:#a855f7;">
-                <span style="font-size:16px;">👟</span>
-                <span>跳跃 (${Math.ceil(player.sneakersTimer)}s)</span>
             </div>`;
     }
     if (player.doubleCoinsTimer > 0) {
