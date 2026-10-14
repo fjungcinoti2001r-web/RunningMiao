@@ -51,7 +51,7 @@
             width: 100%;
             padding: 16px 18px;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: flex-start;
             pointer-events: none;
             z-index: 10;
@@ -344,13 +344,7 @@
     <div id="hud">
         <div class="hud-card">
             <div class="hud-info">
-                <div class="hud-title">SCORE <span id="mult-text" class="mult-badge">1X</span></div>
-                <div class="hud-num score-num" id="score-text">0</div>
-            </div>
-        </div>
-        <div class="hud-card">
-            <div class="hud-info" style="align-items: flex-end;">
-                <div class="hud-title">COINS</div>
+                <div class="hud-title">COINS <span id="mult-text" class="mult-badge" style="display:none;">2X</span></div>
                 <div class="hud-num coin-num" id="coin-text">0</div>
             </div>
         </div>
@@ -505,7 +499,6 @@ preloadGameAssets();
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const scoreEl = document.getElementById('score-text');
 const coinEl = document.getElementById('coin-text');
 const multEl = document.getElementById('mult-text');
 const buffContainer = document.getElementById('buff-container');
@@ -623,12 +616,11 @@ function project(x, y, z) {
 
 // 游戏状态与速度参数
 let gameState = 'START';
-let score = 0;
 let coins = 0;
 let runDistance = 0;
 let bgScrollOffset = 0;     // 背景兜底层横向循环滚动累计偏移量
-let gameSpeed = 760;
-const MAX_SPEED = 1380;
+let gameSpeed = 980;
+const MAX_SPEED = 1680;
 
 const player = {
     track: 0,
@@ -644,9 +636,8 @@ const player = {
     flameCooldown: 0,
 
     // 道具计时
-    magnetTimer: 0,
     sneakersTimer: 0,
-    multiplierTimer: 0,
+    doubleCoinsTimer: 0,
 
     // 碰撞后的短暂缓冲，避免在障碍物命中区重复触发
     stumbleTimer: 0
@@ -659,10 +650,9 @@ let nextSpawnZ = 950;
 let lastFlameSecond = -1;
 
 function resetGame() {
-    score = 0;
     coins = 0;
     runDistance = 0;
-    gameSpeed = 760;
+    gameSpeed = 980;
 
     player.track = 0;
     player.currentX = 0;
@@ -673,9 +663,8 @@ function resetGame() {
     player.onTrain = false;
     player.flameTimer = 0;
     player.flameCooldown = 0;
-    player.magnetTimer = 0;
     player.sneakersTimer = 0;
-    player.multiplierTimer = 0;
+    player.doubleCoinsTimer = 0;
     player.stumbleTimer = 0;
 
     obstacles = [];
@@ -704,9 +693,10 @@ function activateFlame() {
 const CHUNK_PATTERNS = [
     { type: 'BLOCKED_SIDES' },
     { type: 'CENTER_TRAIN' },
-    { type: 'CLEAR' },
+    { type: 'ALTERNATING' },
     { type: 'RAMP_TO_ROOF' },
     { type: 'ALTERNATING' },
+    { type: 'BLOCKED_SIDES' },
     { type: 'POWERUP_REWARD' }
 ];
 let chunkIdx = 0;
@@ -738,7 +728,7 @@ function spawnChunk(spawnZ) {
         obstacles.push({ track: 0, type: 'HIGH_BARRIER', z: spawnZ + 60, length: 15, speed: 0 });
         obstacles.push({ track: 1, type: 'TRAIN', z: spawnZ, length: 300, speed: 60 });
     } else if (pattern.type === 'POWERUP_REWARD') {
-        const buffs = ['MAGNET', 'SNEAKERS', 'MULTIPLIER'];
+        const buffs = ['DOUBLE_COINS', 'SNEAKERS', 'DOUBLE_COINS'];
         const chosen = buffs[Math.floor(Math.random() * buffs.length)];
         pickups.push({ track: 0, type: chosen, z: spawnZ + 30, y: 35 });
     }
@@ -821,10 +811,8 @@ function update(dt) {
 
     if (gameState !== 'PLAYING') return;
 
-    gameSpeed = Math.min(MAX_SPEED, gameSpeed + dt * 10);
+    gameSpeed = Math.min(MAX_SPEED, gameSpeed + dt * 18);
     runDistance += gameSpeed * dt;
-    const mult = player.multiplierTimer > 0 ? 2 : 1;
-    score += Math.floor((gameSpeed * dt * 0.1) * mult);
 
     player.currentX += (player.track - player.currentX) * 22 * dt;
 
@@ -835,9 +823,8 @@ function update(dt) {
         updateBuffUI();
     }
     if (player.flameCooldown > 0) player.flameCooldown = Math.max(0, player.flameCooldown - dt);
-    if (player.magnetTimer > 0) player.magnetTimer = Math.max(0, player.magnetTimer - dt);
     if (player.sneakersTimer > 0) player.sneakersTimer = Math.max(0, player.sneakersTimer - dt);
-    if (player.multiplierTimer > 0) player.multiplierTimer = Math.max(0, player.multiplierTimer - dt);
+    if (player.doubleCoinsTimer > 0) player.doubleCoinsTimer = Math.max(0, player.doubleCoinsTimer - dt);
 
     if (player.state === 'ROLL') {
         player.rollTimer -= dt;
@@ -897,25 +884,16 @@ function update(dt) {
         const item = pickups[i];
         item.z -= gameSpeed * dt;
 
-        if (player.magnetTimer > 0 && item.type === 'COIN' && item.z > 0 && item.z < 380) {
-            item.track += (player.track - item.track) * 9 * dt;
-            item.y += (player.y - item.y) * 9 * dt;
-        }
-
         if (Math.abs(item.track - player.track) < 0.45 && Math.abs(item.z) < 30) {
             if (Math.abs(item.y - player.y) < 55) {
                 if (item.type === 'COIN') {
-                    coins += (player.multiplierTimer > 0 ? 2 : 1);
-                    score += 50;
+                    coins += (player.doubleCoinsTimer > 0 ? 2 : 1);
                     playAudio('coin');
-                } else if (item.type === 'MAGNET') {
-                    player.magnetTimer = 15;
-                    playAudio('unlock');
                 } else if (item.type === 'SNEAKERS') {
                     player.sneakersTimer = 15;
                     playAudio('unlock');
-                } else if (item.type === 'MULTIPLIER') {
-                    player.multiplierTimer = 15;
+                } else if (item.type === 'DOUBLE_COINS') {
+                    player.doubleCoinsTimer = 15;
                     playAudio('unlock');
                 }
                 updateBuffUI();
@@ -930,7 +908,7 @@ function update(dt) {
     if (obstacles.length === 0 || obstacles[obstacles.length - 1].z < 1100) {
         spawnChunk(nextSpawnZ);
         // 缩短区块间距，让障碍更连续出现，同时保留可反应的空隙。
-        nextSpawnZ += 320 + Math.random() * 70;
+        nextSpawnZ += 260 + Math.random() * 55;
     }
 
     for (let pole of sceneryElements) {
@@ -963,16 +941,17 @@ function triggerCollision(reason) {
 function gameOver(msg) {
     gameState = 'GAMEOVER';
     modalTitle.innerText = 'BUSTED!';
-    modalSub.innerHTML = `<span style="color:#ef4444;font-weight:bold;">${msg}</span><br><br>最终得分: <strong>${score}</strong> | 收集金币: <strong>${coins}</strong>`;
+    modalSub.innerHTML = `<span style="color:#ef4444;font-weight:bold;">${msg}</span><br><br>本局收集金币: <strong>${coins}</strong>`;
     btnPlay.innerText = 'PLAY AGAIN';
     overlay.style.display = 'flex';
 }
 
 function updateHUD() {
-    scoreEl.innerText = score;
     coinEl.innerText = coins;
-    multEl.innerText = player.multiplierTimer > 0 ? '2X' : '1X';
-    multEl.style.background = player.multiplierTimer > 0 ? '#38bdf8' : '#ef4444';
+    const doubleCoinsActive = player.doubleCoinsTimer > 0;
+    multEl.innerText = '2X';
+    multEl.style.display = doubleCoinsActive ? 'inline-block' : 'none';
+    multEl.style.background = '#e7a928';
 }
 
 function updateBuffUI() {
@@ -984,13 +963,6 @@ function updateBuffUI() {
                 <span>火焰 (${Math.ceil(player.flameTimer)}s)</span>
             </div>`;
     }
-    if (player.magnetTimer > 0) {
-        buffContainer.innerHTML += `
-            <div class="buff-pill" style="border-color:#fbbf24;">
-                <span style="font-size:16px;">🧲</span>
-                <span>磁铁 (${Math.ceil(player.magnetTimer)}s)</span>
-            </div>`;
-    }
     if (player.sneakersTimer > 0) {
         buffContainer.innerHTML += `
             <div class="buff-pill" style="border-color:#a855f7;">
@@ -998,11 +970,11 @@ function updateBuffUI() {
                 <span>跳跃 (${Math.ceil(player.sneakersTimer)}s)</span>
             </div>`;
     }
-    if (player.multiplierTimer > 0) {
+    if (player.doubleCoinsTimer > 0) {
         buffContainer.innerHTML += `
-            <div class="buff-pill" style="border-color:#ef4444;">
-                <span style="font-size:16px;">✖️2</span>
-                <span>双倍积分 (${Math.ceil(player.multiplierTimer)}s)</span>
+            <div class="buff-pill" style="border-color:#fbbf24;">
+                <span style="font-size:16px;">🪙</span>
+                <span>双倍金币 (${Math.ceil(player.doubleCoinsTimer)}s)</span>
             </div>`;
     }
 }
@@ -1479,7 +1451,7 @@ function drawPickup(item) {
     } else {
         let frameKey = 'icon-item-magnet.png';
         if (item.type === 'SNEAKERS') frameKey = 'icon-item-sneakers.png';
-        else if (item.type === 'MULTIPLIER') frameKey = 'icon-item-multiplier.png';
+        else if (item.type === 'DOUBLE_COINS') frameKey = 'icon-item-multiplier.png';
         if (atlasLoaded && UI_FRAMES[frameKey]) {
             const f = UI_FRAMES[frameKey];
             const sz = 34 * p.scale;
