@@ -285,6 +285,37 @@
             font-weight: 700;
             cursor: pointer;
         }
+        #loading-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 28px;
+            background: linear-gradient(180deg, #fffdfa, #f6f0e8);
+            color: #6b5849;
+            text-align: center;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+        .loading-avatar {
+            width: 72px;
+            height: 72px;
+            margin-bottom: 20px;
+            border: 2px solid #f0642c;
+            border-radius: 50%;
+            padding: 3px;
+            background: #fff;
+            box-shadow: 0 8px 24px rgba(225, 93, 39, 0.18);
+        }
+        .loading-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+        .loading-title { margin: 0 0 7px; color: #df5a25; font-size: 23px; font-weight: 800; }
+        #loading-status { margin: 0 0 14px; color: #9a8879; font-size: 12px; }
+        .loading-track { width: min(230px, 78%); height: 5px; overflow: hidden; border-radius: 9px; background: #eadfd4; }
+        #loading-progress { display: block; width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #f28a4c, #d94c20); transition: width 180ms ease; }
+        #loading-errors { display: none; max-width: 280px; margin: 14px 0 0; color: #a64a32; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+        #loading-retry { display: none; margin-top: 16px; padding: 10px 22px; border: 0; border-radius: 24px; background: #258e5b; color: #fff; font-weight: 700; }
         @media (max-height: 560px) {
             #modal-overlay { padding-top: 12px; padding-bottom: 38px; }
             .hero-avatar-box { width: 58px; height: 58px; }
@@ -300,6 +331,15 @@
 
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
+
+    <div id="loading-overlay" aria-live="polite">
+        <div class="loading-avatar"><img src="./assets/characters/runningmiao-avatar.png" alt=""></div>
+        <h1 class="loading-title">RunningMiao</h1>
+        <p id="loading-status">正在加载游戏素材 · 0%</p>
+        <div class="loading-track"><span id="loading-progress"></span></div>
+        <p id="loading-errors"></p>
+        <button id="loading-retry" type="button" onclick="location.reload()">重新加载</button>
+    </div>
 
     <div id="hud">
         <div class="hud-card">
@@ -385,6 +425,7 @@ avatarDomImg.src = WANG_WEI_CONFIG.avatarUrl;
 // 2. 统一外部素材加载器（支持您近期逐一补充，随放随生效）
 function createAssetImage(src) {
     const img = new Image();
+    img.decoding = 'async';
     const state = { img, loaded: false, src };
     img.onload = () => { state.loaded = true; };
     img.onerror = () => { state.loaded = false; };
@@ -405,6 +446,62 @@ const ASSETS = {
     // 原版 UI 图集 (金币与道具图标)
     uiAtlas:     createAssetImage('./assets/ui/ui.webp')
 };
+
+// 开始页保持遮挡，等角色、街景、赛道、障碍和 UI 图片全部完成加载后再开放。
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingStatus = document.getElementById('loading-status');
+const loadingProgress = document.getElementById('loading-progress');
+const loadingErrors = document.getElementById('loading-errors');
+const loadingRetry = document.getElementById('loading-retry');
+let assetsReady = false;
+const avatarPreload = new Image();
+avatarPreload.src = WANG_WEI_CONFIG.avatarUrl;
+function waitForImage(img) {
+    const decoded = success => {
+        if (!success || img.naturalWidth <= 0) return Promise.resolve(false);
+        return typeof img.decode === 'function' ? img.decode().then(() => true).catch(() => false) : Promise.resolve(true);
+    };
+    if (img.complete) return decoded(img.naturalWidth > 0);
+    return new Promise(resolve => {
+        const finish = success => {
+            img.removeEventListener('load', onLoad);
+            img.removeEventListener('error', onError);
+            decoded(success).then(resolve);
+        };
+        const onLoad = () => finish(true);
+        const onError = () => finish(false);
+        img.addEventListener('load', onLoad, { once: true });
+        img.addEventListener('error', onError, { once: true });
+    });
+}
+function preloadGameAssets() {
+    const entries = [
+        ...Object.entries(ASSETS).map(([name, state]) => [name, state.img]),
+        ['avatar', avatarPreload]
+    ];
+    let completed = 0;
+    const failed = [];
+    const jobs = entries.map(([name, img]) => waitForImage(img).then(ok => {
+        completed++;
+        loadingProgress.style.width = `${Math.round(completed / entries.length * 100)}%`;
+        loadingStatus.textContent = `正在加载游戏素材 · ${Math.round(completed / entries.length * 100)}%`;
+        if (!ok) failed.push(img.src.split('/').pop() || name);
+    }));
+    Promise.all(jobs).then(() => {
+        if (failed.length) {
+            loadingStatus.textContent = '有素材没有加载成功，检查 assets 目录后重试';
+            loadingErrors.textContent = `未加载：${failed.join('、')}`;
+            loadingErrors.style.display = 'block';
+            loadingRetry.style.display = 'inline-block';
+            return;
+        }
+        loadingStatus.textContent = '素材已就绪';
+        if (W > 0 && H > 0) drawScrollingSky(H * HORIZON_RATIO);
+        assetsReady = true;
+        loadingOverlay.style.display = 'none';
+    });
+}
+preloadGameAssets();
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -492,10 +589,13 @@ function playSynth(name) {
 }
 
 let W, H;
+let skyCacheCanvas = null;
+let skyCacheImage = null;
 function resize() {
     const rect = canvas.getBoundingClientRect();
     W = canvas.width = rect.width;
     H = canvas.height = rect.height;
+    skyCacheCanvas = null;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -527,8 +627,8 @@ let score = 0;
 let coins = 0;
 let runDistance = 0;
 let bgScrollOffset = 0;     // 背景兜底层横向循环滚动累计偏移量
-let gameSpeed = 620;
-const MAX_SPEED = 1250;
+let gameSpeed = 760;
+const MAX_SPEED = 1380;
 
 const player = {
     track: 0,
@@ -555,14 +655,14 @@ const player = {
 let obstacles = [];
 let pickups = [];
 let sceneryElements = [];
-let nextSpawnZ = 350;
+let nextSpawnZ = 950;
 let lastFlameSecond = -1;
 
 function resetGame() {
     score = 0;
     coins = 0;
     runDistance = 0;
-    gameSpeed = 620;
+    gameSpeed = 760;
 
     player.track = 0;
     player.currentX = 0;
@@ -581,7 +681,8 @@ function resetGame() {
     obstacles = [];
     pickups = [];
     sceneryElements = [];
-    nextSpawnZ = 350;
+    nextSpawnZ = 950;
+    chunkIdx = 0;
 
     for (let z = 100; z < 2400; z += 180) {
         sceneryElements.push({ z });
@@ -601,9 +702,9 @@ function activateFlame() {
 }
 
 const CHUNK_PATTERNS = [
-    { type: 'CLEAR' },
     { type: 'BLOCKED_SIDES' },
     { type: 'CENTER_TRAIN' },
+    { type: 'CLEAR' },
     { type: 'RAMP_TO_ROOF' },
     { type: 'ALTERNATING' },
     { type: 'POWERUP_REWARD' }
@@ -720,7 +821,7 @@ function update(dt) {
 
     if (gameState !== 'PLAYING') return;
 
-    gameSpeed = Math.min(MAX_SPEED, gameSpeed + dt * 7.5);
+    gameSpeed = Math.min(MAX_SPEED, gameSpeed + dt * 10);
     runDistance += gameSpeed * dt;
     const mult = player.multiplierTimer > 0 ? 2 : 1;
     score += Math.floor((gameSpeed * dt * 0.1) * mult);
@@ -829,7 +930,7 @@ function update(dt) {
     if (obstacles.length === 0 || obstacles[obstacles.length - 1].z < 1100) {
         spawnChunk(nextSpawnZ);
         // 缩短区块间距，让障碍更连续出现，同时保留可反应的空隙。
-        nextSpawnZ += 310 + Math.random() * 80;
+        nextSpawnZ += 320 + Math.random() * 70;
     }
 
     for (let pole of sceneryElements) {
@@ -949,12 +1050,22 @@ function draw() {
 function drawScrollingSky(horizonY) {
     if (ASSETS.skyBg.loaded && ASSETS.skyBg.img.width > 0) {
         const img = ASSETS.skyBg.img;
-        // 放大并顶部对齐，让背景街道的消失点接近跑道远端。
-        const scale = Math.max(W / img.width, H / img.height) * 1.18;
-        const drawW = img.width * scale;
-        const drawH = img.height * scale;
-        const parallaxX = -player.currentX * 4;
-        ctx.drawImage(img, (W - drawW) * 0.5 + parallaxX, 0, drawW, drawH);
+        // 先将大背景按屏幕尺寸缩放一次，再逐帧复用小画布，减轻手机端缩放开销。
+        const cacheW = Math.ceil(W + 16);
+        const cacheH = Math.ceil(H);
+        if (!skyCacheCanvas || skyCacheCanvas.width !== cacheW || skyCacheCanvas.height !== cacheH || skyCacheImage !== img) {
+            skyCacheCanvas = document.createElement('canvas');
+            skyCacheCanvas.width = cacheW;
+            skyCacheCanvas.height = cacheH;
+            const skyCtx = skyCacheCanvas.getContext('2d');
+            const scale = Math.max(W / img.width, H / img.height) * 1.18;
+            const drawW = img.width * scale;
+            const drawH = img.height * scale;
+            skyCtx.drawImage(img, (cacheW - drawW) * 0.5, 0, drawW, drawH);
+            skyCacheImage = img;
+        }
+        const parallaxX = Math.max(-5, Math.min(5, -player.currentX * 4));
+        ctx.drawImage(skyCacheCanvas, 8 + parallaxX, 0, W, H, 0, 0, W, H);
     } else {
         const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
         skyGrad.addColorStop(0, '#090d1a');
@@ -1003,7 +1114,7 @@ function drawTracks(horizonY) {
 
     if (ASSETS.track.loaded && ASSETS.track.img.width > 0) {
         const img = ASSETS.track.img;
-        const strips = 38;
+        const strips = 24;
         const texPeriod = 220;
 
         if (farL && farR && nearL && nearR) {
@@ -1038,22 +1149,15 @@ function drawTracks(horizonY) {
 
                 ctx.drawImage(img, 0, sy, img.width, sh, stripX, topY, stripW, stripH);
 
-                // 暖色薄雾压低贴图的灰冷感，边沿做一层柔和的土黄色过渡。
+                // 暖色薄雾与柔和路缘色块，避免每个切片重复创建渐变对象。
                 ctx.fillStyle = 'rgba(190, 153, 105, 0.10)';
                 ctx.fillRect(stripX, topY, stripW, stripH);
                 const edgeX = (p1L.x + p2L.x) * 0.5;
                 const edgeW = Math.min(30, stripW * 0.075);
-                const leftBlend = ctx.createLinearGradient(edgeX, 0, edgeX + edgeW, 0);
-                leftBlend.addColorStop(0, 'rgba(203, 169, 119, 0.22)');
-                leftBlend.addColorStop(1, 'rgba(203, 169, 119, 0)');
-                ctx.fillStyle = leftBlend;
-                ctx.fillRect(edgeX, topY, edgeW, stripH);
                 const rightX = (p1R.x + p2R.x) * 0.5;
-                const rightBlend = ctx.createLinearGradient(rightX - edgeW, 0, rightX, 0);
-                rightBlend.addColorStop(0, 'rgba(203, 169, 119, 0)');
-                rightBlend.addColorStop(1, 'rgba(203, 169, 119, 0.22)');
-                ctx.fillStyle = rightBlend;
-                ctx.fillRect(rightX - edgeW, topY, edgeW, stripH);
+                ctx.fillStyle = 'rgba(203, 169, 119, 0.08)';
+                ctx.fillRect(edgeX, topY, edgeW * 0.55, stripH);
+                ctx.fillRect(rightX - edgeW * 0.55, topY, edgeW * 0.55, stripH);
             }
 
             ctx.restore();
@@ -1430,34 +1534,25 @@ function drawPlayer() {
     // 1. 若已加载 ./assets/characters/wangwei_spritesheet.png：执行多帧切片播放
     if (ASSETS.spritesheet.loaded && ASSETS.spritesheet.img.width > 0) {
         const sheetImg = ASSETS.spritesheet.img;
-        const runFrames = Array.from({ length: 7 }, (_, i) => ({
-            sx: i * (sheetImg.width / 7), sy: 0, sw: sheetImg.width / 7, sh: 205
-        }));
-        const jumpFrames = [
-            { sx: 0, sy: 205, sw: 190, sh: 190 },
-            { sx: 190, sy: 205, sw: 190, sh: 190 }
-        ];
-        const slideFrames = [
-            { sx: 0, sy: 385, sw: 205, sh: 127 },
-            { sx: 205, sy: 385, sw: 205, sh: 127 }
-        ];
-
-        let frame;
+        let sx, sy, sw, sh;
         let rw = 94, rh = 128;
         if (player.state === 'ROLL') {
-            frame = slideFrames[Math.floor(performance.now() / 180) % slideFrames.length];
+            const frameIndex = Math.floor(performance.now() / 180) % 2;
+            sx = frameIndex * 205; sy = 385; sw = 205; sh = 127;
             rw = 120;
             rh = 88;
         } else if (player.state === 'JUMP') {
-            frame = jumpFrames[player.vy > 0 ? 1 : 0];
+            sx = player.vy > 0 ? 0 : 190; sy = 205; sw = 190; sh = 190;
         } else {
             const stepRate = Math.max(40, 95 - gameSpeed * 0.05);
-            frame = runFrames[Math.floor(performance.now() / stepRate) % runFrames.length];
+            sw = sheetImg.width / 7;
+            sx = (Math.floor(performance.now() / stepRate) % 7) * sw;
+            sy = 0; sh = 205;
         }
 
         ctx.drawImage(
             sheetImg,
-            frame.sx, frame.sy, frame.sw, frame.sh,
+            sx, sy, sw, sh,
             -rw / 2, -rh, rw, rh
         );
         spriteRendered = true;
@@ -1534,8 +1629,10 @@ function loop(now) {
     const dt = Math.min(0.08, (now - lastTick) / 1000);
     lastTick = now;
 
-    update(dt);
-    draw();
+    if (assetsReady) {
+        update(dt);
+        draw();
+    }
 
     requestAnimationFrame(loop);
 }
