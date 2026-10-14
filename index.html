@@ -39,6 +39,7 @@
             overflow: hidden;
         }
         canvas {
+            touch-action: none;
             display: block;
             width: 100%;
             height: 100%;
@@ -65,7 +66,7 @@
             align-items: center;
             gap: 8px;
             box-shadow: 0 6px 18px rgba(0,0,0,0.5);
-            backdrop-filter: blur(8px);
+            /* 避免游戏运行时每帧重新计算毛玻璃合成。 */
         }
         .hud-info {
             display: flex;
@@ -498,7 +499,7 @@ function preloadGameAssets() {
 preloadGameAssets();
 
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
 const coinEl = document.getElementById('coin-text');
 const multEl = document.getElementById('mult-text');
 const buffContainer = document.getElementById('buff-container');
@@ -534,11 +535,13 @@ backgroundMusic.loop = true;
 backgroundMusic.volume = 0.35;
 backgroundMusic.preload = 'auto';
 const audioCache = {};
+const audioCursor = {};
 for (let key in soundFiles) {
     const a = new Audio();
     a.src = soundFiles[key];
     a.preload = 'auto';
-    audioCache[key] = a;
+    audioCache[key] = [a,a.cloneNode()];
+    audioCursor[key]=0;
 }
 
 const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
@@ -546,7 +549,9 @@ let synthCtx = null;
 function playAudio(name) {
     if (audioCache[name]) {
         try {
-            const snd = audioCache[name].cloneNode();
+            const pool=audioCache[name];
+            const snd=pool[audioCursor[name]++ % pool.length];
+            snd.currentTime=0;
             snd.volume = 0.8;
             snd.play().catch(() => playSynth(name));
             return;
@@ -555,12 +560,14 @@ function playAudio(name) {
     playSynth(name);
 }
 function playSynth(name) {
+    if (!AudioCtxClass) return;
     if (!synthCtx) synthCtx = new AudioCtxClass();
     if (synthCtx.state === 'suspended') synthCtx.resume();
     const t = synthCtx.currentTime;
     const osc = synthCtx.createOscillator();
     const gain = synthCtx.createGain();
     osc.connect(gain); gain.connect(synthCtx.destination);
+    osc.onended=()=>{osc.disconnect();gain.disconnect();};
     if (name === 'jump') {
         osc.frequency.setValueAtTime(280, t);
         osc.frequency.exponentialRampToValueAtTime(700, t + 0.16);
@@ -584,11 +591,14 @@ function playSynth(name) {
 let W, H;
 let skyCacheCanvas = null;
 let skyCacheImage = null;
+let roadCache = null;
+let roadCacheImage = null;
 function resize() {
     const rect = canvas.getBoundingClientRect();
-    W = canvas.width = rect.width;
-    H = canvas.height = rect.height;
+    W = canvas.width = Math.round(rect.width);
+    H = canvas.height = Math.round(rect.height);
     skyCacheCanvas = null;
+    roadCache = null;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -625,6 +635,8 @@ const MAX_SPEED = 1680;
 const player = {
     track: 0,
     currentX: 0,
+    animationTime: 0,
+    jumpBuffer: 0,
     y: 0,
     vy: 0,
     state: 'RUN',
@@ -645,7 +657,7 @@ const player = {
 let obstacles = [];
 let pickups = [];
 let sceneryElements = [];
-let nextSpawnZ = 950;
+let nextSpawnZ = 850;
 let lastFlameSecond = -1;
 
 function resetGame() {
@@ -655,6 +667,8 @@ function resetGame() {
 
     player.track = 0;
     player.currentX = 0;
+    player.animationTime = 0;
+    player.jumpBuffer = 0;
     player.y = 0;
     player.vy = 0;
     player.state = 'RUN';
@@ -668,8 +682,9 @@ function resetGame() {
     obstacles = [];
     pickups = [];
     sceneryElements = [];
-    nextSpawnZ = 950;
+    nextSpawnZ = 850;
     chunkIdx = 0;
+    fillObstacleHorizon();
 
     for (let z = 100; z < 2400; z += 180) {
         sceneryElements.push({ z });
@@ -688,57 +703,46 @@ function activateFlame() {
     }
 }
 
-const CHUNK_PATTERNS = [
-    { type: 'HURDLE' },
-    { type: 'BLOCKED_SIDES' },
-    { type: 'CENTER_TRAIN' },
-    { type: 'HIGH_BARRIER' },
-    { type: 'HURDLE' },
-    { type: 'ALTERNATING' },
-    { type: 'RAMP_TO_ROOF' },
-    { type: 'HURDLE' },
-    { type: 'BLOCKED_SIDES' },
-    { type: 'POWERUP_REWARD' }
-];
+// 每轮 12 波：7 波矮路障、3 波高横杆、2 波货车；奖励附在障碍波次中。
+const OBSTACLE_CYCLE = ['HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HIGH_BARRIER','HURDLE'];
 let chunkIdx = 0;
-
 function spawnChunk(spawnZ) {
-    const pattern = CHUNK_PATTERNS[chunkIdx % CHUNK_PATTERNS.length];
-    chunkIdx++;
-
-    if (pattern.type === 'CLEAR') {
-        for (let i = 0; i < 5; i++) {
-            pickups.push({ track: 0, type: 'COIN', z: spawnZ + i * 36, y: 22 });
+    const type=OBSTACLE_CYCLE[chunkIdx % OBSTACLE_CYCLE.length];
+    const lane=chunkIdx===0 ? 0 : Math.floor(Math.random()*3)-1;
+    const length=type==='TRAIN' ? 235 : 18;
+    const laneFree=(track, size) => !obstacles.some(o => o.track===track && spawnZ < o.z+o.length+100 && spawnZ+size+100 > o.z);
+    const freeLanes=[lane,-1,0,1].filter((v,i,a)=>a.indexOf(v)===i && laneFree(v,length));
+    if (!freeLanes.length) return;
+    const chosen=freeLanes[0];
+    obstacles.push({track:chosen,type,z:spawnZ,length,speed:0});
+    const open=[-1,0,1].filter(t=>t!==chosen);
+    // 最多占两条跑道，始终留出一条可通行路线。
+    if (chunkIdx>1 && Math.random()<0.32) {
+        const second=open[Math.floor(Math.random()*open.length)];
+        if (laneFree(second,18)) {
+            obstacles.push({track:second,type:'HURDLE',z:spawnZ,length:18,speed:0});
+            open.splice(open.indexOf(second),1);
         }
-    } else if (pattern.type === 'HURDLE') {
-        const lane = [-1, 0, 1][chunkIdx % 3];
-        obstacles.push({ track: lane, type: 'HURDLE', z: spawnZ, length: 15, speed: 0 });
-        const coinLane = lane === 0 ? 1 : 0;
-        pickups.push({ track: coinLane, type: 'COIN', z: spawnZ + 28, y: 22 });
-    } else if (pattern.type === 'HIGH_BARRIER') {
-        const lane = [-1, 0, 1][chunkIdx % 3];
-        obstacles.push({ track: lane, type: 'HIGH_BARRIER', z: spawnZ, length: 15, speed: 0 });
-    } else if (pattern.type === 'BLOCKED_SIDES') {
-        obstacles.push({ track: -1, type: 'HURDLE', z: spawnZ, length: 15, speed: 0 });
-        obstacles.push({ track: 1, type: 'HIGH_BARRIER', z: spawnZ, length: 15, speed: 0 });
-        pickups.push({ track: 0, type: 'COIN', z: spawnZ + 20, y: 22 });
-    } else if (pattern.type === 'CENTER_TRAIN') {
-        obstacles.push({ track: 0, type: 'TRAIN', z: spawnZ, length: 340, speed: 70 });
-        for (let i = 0; i < 4; i++) {
-            pickups.push({ track: -1, type: 'COIN', z: spawnZ + i * 35, y: 22 });
-        }
-    } else if (pattern.type === 'RAMP_TO_ROOF') {
-        obstacles.push({ track: 1, type: 'RAMP_TRAIN', z: spawnZ, length: 360, speed: 70 });
-        for (let i = 0; i < 5; i++) {
-            pickups.push({ track: 1, type: 'COIN', z: spawnZ + 80 + i * 40, y: TRAIN_HEIGHT + 20 });
-        }
-    } else if (pattern.type === 'ALTERNATING') {
-        obstacles.push({ track: -1, type: 'HURDLE', z: spawnZ, length: 15, speed: 0 });
-        obstacles.push({ track: 0, type: 'HIGH_BARRIER', z: spawnZ + 60, length: 15, speed: 0 });
-        obstacles.push({ track: 1, type: 'TRAIN', z: spawnZ, length: 300, speed: 60 });
-    } else if (pattern.type === 'POWERUP_REWARD') {
-        pickups.push({ track: 0, type: 'DOUBLE_COINS', z: spawnZ + 30, y: 35 });
     }
+    const coinLane=open[Math.floor(Math.random()*open.length)];
+    for(let i=0;i<3;i++) pickups.push({track:coinLane,type:'COIN',z:spawnZ+35+i*52,y:22});
+    if (chunkIdx>0 && chunkIdx%9===0) pickups.push({track:coinLane,type:'DOUBLE_COINS',z:spawnZ+220,y:35});
+    chunkIdx++;
+}
+function fillObstacleHorizon() {
+    while (nextSpawnZ<2600) {
+        spawnChunk(nextSpawnZ);
+        // 按反应时间留间隔，随速度渐进收紧；货车车身长度也包含在安全间距中。
+        const seconds=Math.max(0.48,0.66-(gameSpeed-980)/5000)+Math.random()*0.09;
+        nextSpawnZ+=Math.max(410,gameSpeed*seconds);
+    }
+}
+function beginJump() {
+    player.vy=640;
+    player.state='JUMP';
+    player.rollTimer=0;
+    player.jumpBuffer=0;
+    playAudio('jump');
 }
 
 function handleAction(act) {
@@ -749,14 +753,11 @@ function handleAction(act) {
     } else if (act === 'RIGHT') {
         if (player.track < 1) { player.track++; playAudio('dodge'); }
     } else if (act === 'JUMP') {
+        player.jumpBuffer=0.12;
         const groundHeight = player.onTrain ? TRAIN_HEIGHT : 0;
-        if (player.y <= groundHeight + 6) {
-            player.vy = 640;
-            player.state = 'JUMP';
-            player.rollTimer = 0;
-            playAudio('jump');
-        }
+        if (player.y <= groundHeight + 6) beginJump();
     } else if (act === 'ROLL') {
+        player.jumpBuffer=0;
         if (player.y > (player.onTrain ? TRAIN_HEIGHT : 0)) {
             player.vy = -1100; // Fast Dive 急速下砸
         }
@@ -778,37 +779,41 @@ window.addEventListener('keydown', e => {
     }
 });
 
-let touchX = 0, touchY = 0;
-let lastTapTime = 0;
-
+let touchX=0, touchY=0, touchId=null, gestureUsed=false;
+let touchStartedAt=0, lastTapTime=0, lastTapX=0, lastTapY=0;
+function processSwipe(touch) {
+    if (gestureUsed || !touch) return;
+    const dx=touch.clientX-touchX, dy=touch.clientY-touchY;
+    if (Math.max(Math.abs(dx),Math.abs(dy))<18) return;
+    gestureUsed=true;
+    lastTapTime=0;
+    handleAction(Math.abs(dx)>Math.abs(dy) ? (dx>0?'RIGHT':'LEFT') : (dy>0?'ROLL':'JUMP'));
+}
 canvas.addEventListener('touchstart', e => {
-    const now = performance.now();
-    if (now - lastTapTime < 300) {
-        activateFlame();
-    }
-    lastTapTime = now;
-
-    touchX = e.touches[0].clientX;
-    touchY = e.touches[0].clientY;
-}, { passive: true });
-
-// 桌面端鼠标双击与移动端双击使用同一技能触发逻辑。
-canvas.addEventListener('dblclick', e => {
-    e.preventDefault();
-    activateFlame();
-});
-
+    if (touchId!==null) return;
+    const t=e.changedTouches[0];
+    touchId=t.identifier; touchX=t.clientX; touchY=t.clientY;
+    touchStartedAt=performance.now(); gestureUsed=false;
+}, {passive:true});
+canvas.addEventListener('touchmove', e => {
+    processSwipe(Array.from(e.changedTouches).find(t=>t.identifier===touchId));
+}, {passive:true});
 canvas.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - touchX;
-    const dy = e.changedTouches[0].clientY - touchY;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) > 26) {
-        if (Math.abs(dx) > Math.abs(dy)) {
-            handleAction(dx > 0 ? 'RIGHT' : 'LEFT');
+    const t=Array.from(e.changedTouches).find(t=>t.identifier===touchId);
+    if (!t) return;
+    processSwipe(t);
+    const now=performance.now();
+    if (!gestureUsed && now-touchStartedAt<240) {
+        if (lastTapTime>0 && now-lastTapTime<300 && Math.hypot(t.clientX-lastTapX,t.clientY-lastTapY)<38) {
+            activateFlame(); lastTapTime=0;
         } else {
-            handleAction(dy > 0 ? 'ROLL' : 'JUMP');
+            lastTapTime=now; lastTapX=t.clientX; lastTapY=t.clientY;
         }
     }
-}, { passive: true });
+    touchId=null;
+}, {passive:true});
+canvas.addEventListener('touchcancel', () => { touchId=null; lastTapTime=0; }, {passive:true});
+canvas.addEventListener('dblclick', e => { e.preventDefault(); activateFlame(); });
 
 let lastTick = performance.now();
 function update(dt) {
@@ -819,9 +824,13 @@ function update(dt) {
     if (gameState !== 'PLAYING') return;
 
     gameSpeed = Math.min(MAX_SPEED, gameSpeed + dt * 18);
-    runDistance += gameSpeed * dt;
+    const distanceStep=gameSpeed*dt;
+    runDistance += distanceStep;
+    nextSpawnZ -= distanceStep;
+    player.animationTime += dt*Math.min(1.65,gameSpeed/980);
+    player.jumpBuffer=Math.max(0,player.jumpBuffer-dt);
 
-    player.currentX += (player.track - player.currentX) * 22 * dt;
+    player.currentX += (player.track - player.currentX) * (1-Math.exp(-28*dt));
 
     if (player.flameTimer > 0) player.flameTimer = Math.max(0, player.flameTimer - dt);
     const flameSecond = Math.ceil(player.flameTimer);
@@ -843,47 +852,34 @@ function update(dt) {
     player.vy -= GRAVITY * dt;
     player.y += player.vy * dt;
 
-    let groundH = 0;
+    const groundH = 0;
     player.onTrain = false;
-
-    for (let obs of obstacles) {
-        if ((obs.type === 'TRAIN' || obs.type === 'RAMP_TRAIN') && obs.track === player.track) {
-            if (obs.z <= 35 && (obs.z + obs.length) >= -10) {
-                if (obs.type === 'RAMP_TRAIN' && obs.z > -10 && obs.z < 65) {
-                    const progress = (65 - obs.z) / 75;
-                    groundH = Math.max(groundH, progress * TRAIN_HEIGHT);
-                } else {
-                    if (player.y >= TRAIN_HEIGHT - 25) {
-                        groundH = TRAIN_HEIGHT;
-                        player.onTrain = true;
-                    }
-                }
-            }
-        }
-    }
 
     if (player.y <= groundH) {
         player.y = groundH;
         player.vy = 0;
         if (player.state === 'JUMP') player.state = 'RUN';
+        if (player.jumpBuffer>0) beginJump();
     }
 
     for (let i = obstacles.length - 1; i >= 0; i--) {
         const obs = obstacles[i];
+        const previousZ=obs.z;
         obs.z -= (gameSpeed + obs.speed) * dt;
-
-        const inHitZone = (obs.z >= -15 && obs.z <= 20);
-        if (player.stumbleTimer <= 0 && obs.track === player.track && inHitZone) {
-            if (obs.type === 'TRAIN') {
-                if (player.y < TRAIN_HEIGHT - 16) triggerCollision('正面撞击高速迎面载具！');
+        const isTruck=obs.type==='TRAIN';
+        const inHitZone=isTruck ? (obs.z<=20 && obs.z+obs.length>=-15) : (obs.z<=20 && previousZ+obs.length>=-15);
+        if (player.stumbleTimer <= 0 && Math.abs(obs.track-player.currentX)<0.56 && inHitZone) {
+            if (isTruck) {
+                if (player.y < TRAIN_HEIGHT - 8) triggerCollision('撞上货车了！', obs);
             } else if (obs.type === 'HURDLE') {
-                if (player.y < 42) triggerCollision('撞翻赛道矮路障！');
+                if (player.y < 42) triggerCollision('下次记得上滑跳过矮路障。', obs);
             } else if (obs.type === 'HIGH_BARRIER') {
-                if (player.state !== 'ROLL' || player.y > 28) triggerCollision('撞上高空限高横梁！');
+                if (player.state !== 'ROLL' || player.y > 28) triggerCollision('下次记得下滑钻过高横杆。', obs);
             }
         }
 
-        if (obs.z + obs.length < -140) obstacles.splice(i, 1);
+        if (gameState !== 'PLAYING') return;
+        if (obs.destroyed || obs.z + obs.length < -240) obstacles.splice(i, 1);
     }
 
     for (let i = pickups.length - 1; i >= 0; i--) {
@@ -908,76 +904,67 @@ function update(dt) {
         if (item.z < -60) pickups.splice(i, 1);
     }
 
-    if (obstacles.length === 0 || obstacles[obstacles.length - 1].z < 1100) {
-        spawnChunk(nextSpawnZ);
-        // 缩短区块间距，让障碍更连续出现，同时保留可反应的空隙。
-        nextSpawnZ += 260 + Math.random() * 55;
-    }
+    fillObstacleHorizon();
+
 
     for (let pole of sceneryElements) {
         pole.z -= gameSpeed * dt;
         if (pole.z < -100) pole.z += 2400;
     }
 
-    updateHUD();
 }
 
 let screenShake = 0;
-function triggerCollision(reason) {
+let hudCoins=-1, hudDouble=null, buffKey='';
+function triggerCollision(reason, obstacle) {
     if (player.flameTimer > 0) {
-        player.flameTimer = 0;
-        player.flameCooldown = 5;
-        lastFlameSecond = 0;
-        player.stumbleTimer = 0.75;
+        player.flameTimer=0;
+        player.flameCooldown=5;
+        player.stumbleTimer=0.65;
+        if (obstacle) obstacle.destroyed=true;
         playAudio('shieldCrash');
-        screenShake = 16;
+        screenShake=3;
         updateBuffUI();
         return;
     }
-
-    playAudio('stumble');
-    player.stumbleTimer = 0.75;
-    gameSpeed = Math.max(380, gameSpeed * 0.72);
-    screenShake = 12;
+    playAudio('death');
+    gameOver(reason);
 }
 
 function gameOver(msg) {
     gameState = 'GAMEOVER';
-    modalTitle.innerText = 'BUSTED!';
+    modalTitle.innerText = '本次跑酷结束';
     modalSub.innerHTML = `<span style="color:#ef4444;font-weight:bold;">${msg}</span><br><br>本局收集金币: <strong>${coins}</strong>`;
-    btnPlay.innerText = 'PLAY AGAIN';
+    btnPlay.innerText = '再跑一次';
     overlay.style.display = 'flex';
 }
 
 function updateHUD() {
-    coinEl.innerText = coins;
-    const doubleCoinsActive = player.doubleCoinsTimer > 0;
-    multEl.innerText = '2X';
-    multEl.style.display = doubleCoinsActive ? 'inline-block' : 'none';
-    multEl.style.background = '#e7a928';
+    if (hudCoins!==coins) { coinEl.textContent=coins; hudCoins=coins; }
+    const active=player.doubleCoinsTimer>0;
+    if (hudDouble!==active) {
+        multEl.textContent='2X';
+        multEl.style.display=active?'inline-block':'none';
+        multEl.style.background='#e7a928';
+        hudDouble=active;
+    }
+    updateBuffUI();
 }
-
 function updateBuffUI() {
-    buffContainer.innerHTML = '';
-    if (player.flameTimer > 0) {
-        buffContainer.innerHTML += `
-            <div class="buff-pill" style="border-color:#fb923c;">
-                <span style="font-size:16px;">🔥</span>
-                <span>火焰 (${Math.ceil(player.flameTimer)}s)</span>
-            </div>`;
-    }
-    if (player.doubleCoinsTimer > 0) {
-        buffContainer.innerHTML += `
-            <div class="buff-pill" style="border-color:#fbbf24;">
-                <span style="font-size:16px;">🪙</span>
-                <span>双倍金币 (${Math.ceil(player.doubleCoinsTimer)}s)</span>
-            </div>`;
-    }
+    const flame=Math.ceil(player.flameTimer), doubled=Math.ceil(player.doubleCoinsTimer);
+    const key=flame+':'+doubled;
+    if(key===buffKey) return;
+    buffKey=key;
+    let markup='';
+    if(flame>0) markup+='<div class="buff-pill" style="border-color:#fb923c;"><span>🔥</span><span>火焰 ('+flame+'s)</span></div>';
+    if(doubled>0) markup+='<div class="buff-pill" style="border-color:#fbbf24;"><span>🪙</span><span>双倍金币 ('+doubled+'s)</span></div>';
+    buffContainer.innerHTML=markup;
 }
 
 // ============================================================================
 // 核心渲染函数 (全套素材接入 + 背景横屏无缝循环播放)
 // ============================================================================
+const renderQueue=[];
 function draw() {
     ctx.save();
 
@@ -996,16 +983,28 @@ function draw() {
     drawTracks(horizonY);
 
     // 3. 收集场景内所有实体并按 Z 轴由远及近排序渲染
-    const renderQueue = [];
-    for (let p of sceneryElements) renderQueue.push({ type: 'POLE', z: p.z, obj: p });
-    for (let obs of obstacles) renderQueue.push({ type: 'OBSTACLE', z: obs.z, obj: obs });
+    renderQueue.length=0;
+    for (const p of sceneryElements) renderQueue.push({type:'POLE',z:p.z,obj:p});
+    for (const obs of obstacles) {
+        if (obs.type==='TRAIN') {
+            if(!obs.mesh) buildTruckMesh(obs);
+            drawTruckShadow(obs);
+            const distant=obs.z>1000;
+            for(const command of obs.faceCommands) {
+                if(distant && command.face.detail) continue;
+                command.z=obs.z+command.face.depth;
+                renderQueue.push(command);
+            }
+        } else renderQueue.push({type:'OBSTACLE',z:obs.z,obj:obs});
+    }
     for (let item of pickups) renderQueue.push({ type: 'PICKUP', z: item.z, obj: item });
     renderQueue.push({ type: 'PLAYER', z: 0 });
 
     renderQueue.sort((a, b) => b.z - a.z);
 
     for (let item of renderQueue) {
-        if (item.type === 'POLE') drawPole(item.obj);
+        if (item.type === 'TRUCK_FACE') drawTruckFace(item.obj,item.face);
+        else if (item.type === 'POLE') drawPole(item.obj);
         else if (item.type === 'OBSTACLE') drawObstacle(item.obj);
         else if (item.type === 'PICKUP') drawPickup(item.obj);
         else if (item.type === 'PLAYER') drawPlayer();
@@ -1072,6 +1071,15 @@ function drawScrollingSky(horizonY) {
 
 // 赛道地面与 track.png 纹理渲染（直接贴合在背景街道空间上，左右两侧保留背景原图路肩，不加黑边遮挡）
 function drawTracks(horizonY) {
+    if(!roadCache || roadCacheImage!==ASSETS.track.img || roadCache.width!==W || roadCache.height!==H) {
+        roadCache=document.createElement('canvas');
+        roadCache.width=W; roadCache.height=H;
+        roadCacheImage=ASSETS.track.img;
+        paintTracks(horizonY,roadCache.getContext('2d'));
+    }
+    ctx.drawImage(roadCache,0,0);
+}
+function paintTracks(horizonY,ctx) {
     const maxZ = 1600;
     const minZ = -180;
     const roadHalfW = 1.68;
@@ -1149,8 +1157,8 @@ function drawTracks(horizonY) {
     for (const laneX of [-0.56, 0.56]) {
         for (let z = maxZ; z > minZ; z -= 175) {
             const endZ = Math.max(minZ, z - 112);
-            drawProjectedLine(0, [laneX, 0.7, z], [laneX, 0.7, endZ], 'rgba(67, 61, 50, 0.38)', 1.3);
-            drawProjectedLine(0, [laneX + 0.025, 1.1, z], [laneX + 0.025, 1.1, endZ], 'rgba(222, 197, 153, 0.20)', 0.8);
+            drawProjectedLine(0, [laneX, 0.7, z], [laneX, 0.7, endZ], 'rgba(67, 61, 50, 0.38)', 1.3, ctx);
+            drawProjectedLine(0, [laneX + 0.025, 1.1, z], [laneX + 0.025, 1.1, endZ], 'rgba(222, 197, 153, 0.20)', 0.8, ctx);
         }
     }
     ctx.restore();
@@ -1191,170 +1199,200 @@ function drawProjectedPolygon(track, vertices, fillStyle, strokeStyle = null, st
     }
 }
 
-function drawProjectedLine(track, a, b, color, width = 1.5) {
+function drawProjectedLine(track, a, b, color, width = 1.5, target = ctx) {
     const p1 = project(track + a[0], a[1], a[2]);
     const p2 = project(track + b[0], b[1], b[2]);
     if (!p1 || !p2) return;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(0.8, width * (p1.scale + p2.scale) * 0.5);
-    ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y);
-    ctx.lineTo(p2.x, p2.y);
-    ctx.stroke();
+    target.strokeStyle = color;
+    target.lineWidth = Math.max(0.8, width * (p1.scale + p2.scale) * 0.5);
+    target.beginPath();
+    target.moveTo(p1.x, p1.y);
+    target.lineTo(p2.x, p2.y);
+    target.stroke();
 }
 
-// 曼谷蓝色平板小货车：驾驶室、栏杆货斗、篷布货包均按跑道透视绘制
-function drawBangkokTruck(obs) {
-    const zFront = obs.z;
-    const zRear = obs.z + obs.length;
-    const zCabBack = zFront + Math.min(obs.length * 0.34, 112);
-    const half = 0.43;
-    const front = project(obs.track, 0, zFront);
-    const rear = project(obs.track, 0, zRear);
-    if (!front || !rear) return;
+// 每辆车只建立一次封闭模型；车身、货物和铁架共用深度排序。
+function buildTruckMesh(obs) {
+    const faces = [];
+    const cabEnd = 76;
+    const rear = obs.length;
+    const add = (vertices, color, detail = false) => {
+        const depth = vertices.reduce((sum, p) => sum + p[2], 0) / vertices.length;
+        faces.push({ vertices, color, detail, depth });
+    };
+    const box = (x0, x1, y0, y1, z0, z1, front, top, side, detail = false) => {
+        add([[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0]], front, detail);
+        add([[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]], top, detail);
+        if (obs.track + x0 > 0) add([[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1]], side, detail);
+        if (obs.track + x1 < 0) add([[x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]], side, detail);
+    };
+    const panel = (x0, x1, y0, y1, z, color, detail = true) =>
+        add([[x0,y0,z],[x1,y0,z],[x1,y1,z],[x0,y1,z]], color, detail);
+    const fleck = n => { const x=Math.sin(n*91.73+4.19)*43758.5453; return x-Math.floor(x); };
 
-    ctx.save();
-    drawProjectedPolygon(obs.track, [
-        [-half, 2, zFront], [half, 2, zFront], [half, 2, zRear], [-half, 2, zRear]
-    ], 'rgba(25, 28, 26, 0.24)');
-
-    // 车轮先画在车身后面
-    for (const side of [-1, 1]) {
-        for (const z of [zFront + 24, zCabBack + (zRear - zCabBack) * 0.60]) {
-            const wheel = project(obs.track + side * 0.39, 15, z);
-            if (!wheel) continue;
-            ctx.fillStyle = '#20282b';
-            ctx.beginPath();
-            ctx.ellipse(wheel.x, wheel.y, Math.max(2, 7 * wheel.scale), Math.max(3, 11 * wheel.scale), 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#9d9a87';
-            ctx.beginPath();
-            ctx.ellipse(wheel.x, wheel.y, Math.max(1.2, 3.5 * wheel.scale), Math.max(1.5, 5 * wheel.scale), 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#394247';
-            ctx.beginPath();
-            ctx.arc(wheel.x, wheel.y, Math.max(0.8, 1.2 * wheel.scale), 0, Math.PI * 2);
-            ctx.fill();
+    // 车底、轮胎与轮毂。底盘抬离地面，轮胎不会被驾驶室完全盖住。
+    box(-0.38,0.38,19,33,10,rear,'#283738','#394445','#202b2d');
+    for (const side of [-1,1]) {
+        const x0 = side < 0 ? -0.45 : 0.32;
+        const x1 = side < 0 ? -0.32 : 0.45;
+        for (const axle of [34,rear-38]) {
+            const ring=(x,r)=>Array.from({length:10},(_,i)=>[x,16+Math.sin(i*Math.PI/5)*r,axle+Math.cos(i*Math.PI/5)*r]);
+            const left=ring(x0,15), right=ring(x1,15);
+            for(let i=0;i<10;i++) add([left[i],right[i],right[(i+1)%10],left[(i+1)%10]],i<5?'#283032':'#1b2224');
+            const visibleX=obs.track+(x0+x1)*0.5>0 ? x0-0.001 : x1+0.001;
+            add(ring(visibleX,15),'#192123');
+            add(ring(visibleX,8),'#737f7c',true);
+            add(ring(visibleX,4),'#abb0a0',true);
         }
     }
 
-    // 货斗地板与蓝灰色侧板
-    drawProjectedPolygon(obs.track, [
-        [-half, 42, zCabBack], [half, 42, zCabBack], [half, 42, zRear], [-half, 42, zRear]
-    ], '#73858a', '#34444a', 1.2);
-    drawProjectedPolygon(obs.track, [
-        [-half, 42, zCabBack], [-half, 88, zCabBack], [-half, 88, zRear], [-half, 42, zRear]
-    ], '#91a1a0', '#35454a', 1.1);
-    drawProjectedPolygon(obs.track, [
-        [half, 42, zCabBack], [half, 88, zCabBack], [half, 88, zRear], [half, 42, zRear]
-    ], '#53676e', '#2d3d43', 1.1);
+    // 钢制货斗：地板、完整侧板、尾门和加固筋。
+    box(-0.42,0.42,34,45,cabEnd+5,rear,'#405c63','#74817b','#3e5960');
+    box(-0.43,-0.39,43,73,cabEnd+5,rear,'#547583','#829491','#4c6974');
+    box(0.39,0.43,43,73,cabEnd+5,rear,'#486875','#758a8a','#3c5866');
+    box(-0.43,0.43,43,73,rear-5,rear,'#526d73','#9aa49a','#405b64');
+    for (let z = cabEnd+13; z < rear-10; z += 45) {
+        for (const side of [-1,1]) {
+            box(side*0.425-0.012,side*0.425+0.012,43,73,z,z+4,'#8c9990','#a1a99b','#617780',true);
+        }
+    }
 
-    // 货斗里堆放泰国街市常见的帆布包、菜筐和捆扎货物，避免空车厢像平板盒子。
-    const cargoLength = zRear - zCabBack;
-    const bags = [
-        { x: -0.16, at: 0.18, color: '#8b7754', light: '#c2a675', h: 126 },
-        { x: 0.13, at: 0.40, color: '#60705b', light: '#aab080', h: 119 },
-        { x: -0.12, at: 0.62, color: '#9c7652', light: '#c7a16e', h: 133 },
-        { x: 0.13, at: 0.81, color: '#74705b', light: '#b8aa83', h: 121 }
+    // 真正落在货斗地板上的货箱：完整六面体可见面与扎带，避免悬空穿插。
+    const cargo = [
+        [-0.30,0.01,cabEnd+22,cabEnd+64,94,'#a18456','#c3a674','#816946'],
+        [0.04,0.30,cabEnd+74,cabEnd+114,82,'#7b8062','#a1a583','#606950'],
+        [-0.28,0.08,rear-55,rear-13,103,'#9b7c53','#c3a37a','#7c6446']
     ];
-    for (const bag of bags) {
-        const bz = zCabBack + cargoLength * bag.at;
-        const bw = 0.17;
-        const bagTop = bag.h;
-        // 货物的顶面、朝车尾的端面和侧面，增加立体层次。
-        drawProjectedPolygon(obs.track, [
-            [bag.x - bw, bagTop, bz], [bag.x + bw, bagTop, bz], [bag.x + bw, bagTop, bz + 20], [bag.x - bw, bagTop, bz + 20]
-        ], bag.light, '#574b39', 0.8);
-        drawProjectedPolygon(obs.track, [
-            [bag.x - bw, 88, bz], [bag.x - bw, bagTop, bz], [bag.x - bw, bagTop, bz + 20], [bag.x - bw, 88, bz + 20]
-        ], bag.color, '#574b39', 0.8);
-        drawProjectedPolygon(obs.track, [
-            [bag.x - bw, 88, bz + 20], [bag.x + bw, 88, bz + 20], [bag.x + bw, bagTop, bz + 20], [bag.x - bw, bagTop, bz + 20]
-        ], bag.light, '#574b39', 0.8);
-        drawProjectedLine(obs.track, [bag.x, bagTop, bz + 2], [bag.x, bagTop, bz + 18], '#73634a', 1.1);
-        drawProjectedLine(obs.track, [bag.x - bw, bagTop - 5, bz + 10], [bag.x + bw, bagTop - 5, bz + 10], '#e0c996', 0.9);
-    }
-
-    // 货斗铁栏：较清楚的立柱、三道横杆与可见尾门
-    for (const side of [-1, 1]) {
-        for (let i = 0; i <= 4; i++) {
-            const z = zCabBack + cargoLength * (i / 4);
-            drawProjectedLine(obs.track, [side * 0.45, 78, z], [side * 0.45, 142, z], '#26383d', 2.8);
-            drawProjectedLine(obs.track, [side * 0.45, 78, z], [side * 0.45, 142, z], '#a6aaa0', 1.0);
-        }
-        for (const railY of [101, 122, 141]) {
-            drawProjectedLine(obs.track, [side * 0.45, railY, zCabBack], [side * 0.45, railY, zRear], '#283a3f', 3.0);
-            drawProjectedLine(obs.track, [side * 0.45, railY + 1, zCabBack], [side * 0.45, railY + 1, zRear], '#c2c0ae', 0.9);
+    for (const [x0,x1,z0,z1,y1,front,top,side] of cargo) {
+        box(x0,x1,45,y1,z0,z1,front,top,side);
+        const mid = (x0+x1)/2;
+        panel(mid-0.018,mid+0.018,45,y1,z0-0.2,'#d0ba8a');
+        add([[mid-0.018,y1+0.2,z0],[mid+0.018,y1+0.2,z0],[mid+0.018,y1+0.2,z1],[mid-0.018,y1+0.2,z1]],'#d0ba8a',true);
+        panel(x0+0.025,x0+0.11,y1-17,y1-8,z0-0.3,'#dfc99f');
+        for(let j=0;j<8;j++) {
+            const x=x0+0.02+fleck(j+y1)*(x1-x0-0.06);
+            const y=49+fleck(j+z0)*(y1-55);
+            panel(x,x+0.014,y,y+2,z0-0.4,j%2?'#8d774f':'#b59a67');
         }
     }
-    for (const railY of [101, 122, 141]) {
-        drawProjectedLine(obs.track, [-half, railY, zRear], [half, railY, zRear], '#28383c', 3.0);
-        drawProjectedLine(obs.track, [-half, railY + 1, zRear], [half, railY + 1, zRear], '#c2c0ae', 0.9);
+
+    // 铁笼沿货斗边界搭建，前端在驾驶室后方，全部参与统一遮挡。
+    for (const side of [-1,1]) {
+        const x = side*0.425;
+        for (let i=0; i<4; i++) {
+            const z = cabEnd+10+(rear-cabEnd-12)*i/3;
+            box(x-0.011,x+0.011,70,140,z,z+3,'#4a5855','#bdc0ab','#6f7e76');
+        }
+        for (const y of [98,138]) {
+            box(x-0.013,x+0.013,y,y+3,cabEnd+10,rear,'#6d7971','#bcc1aa','#4b5e58');
+        }
+    }
+    for (const z of [cabEnd+10,rear-2]) {
+        for (const y of [98,138]) box(-0.43,0.43,y,y+3,z,z+3,'#64756d','#bdc0a9','#455a54');
     }
 
-    // 驾驶室车顶与两侧车门
-    drawProjectedPolygon(obs.track, [
-        [-half, 0, zFront], [-half, 112, zFront], [-half, 112, zCabBack], [-half, 0, zCabBack]
-    ], '#3e7180', '#26383d', 1.4);
-    drawProjectedPolygon(obs.track, [
-        [half, 0, zFront], [half, 112, zFront], [half, 112, zCabBack], [half, 0, zCabBack]
-    ], '#568b96', '#26383d', 1.4);
-    drawProjectedPolygon(obs.track, [
-        [-half, 112, zFront + 5], [half, 112, zFront + 5], [half, 112, zCabBack], [-half, 112, zCabBack]
-    ], '#91b1ac', '#2d4145', 1.1);
-    // 车顶压边、遮阳檐与车门压线，打破驾驶室整块纯色的塑料感。
-    drawProjectedLine(obs.track, [-0.40, 108, zFront + 4], [0.40, 108, zFront + 4], '#d0d2b8', 1.5);
-    drawProjectedLine(obs.track, [-0.43, 50, zCabBack - 8], [-0.43, 102, zCabBack - 8], '#8fa5a0', 0.8);
-    drawProjectedLine(obs.track, [0.43, 50, zCabBack - 8], [0.43, 102, zCabBack - 8], '#355660', 0.8);
-    for (const side of [-1, 1]) {
-        drawProjectedLine(obs.track, [side * 0.43, 72, zFront + 15], [side * 0.49, 72, zFront + 12], '#26383d', 2.2);
-        drawProjectedPolygon(obs.track, [
-            [side * 0.48, 66, zFront + 8], [side * 0.58, 66, zFront + 8],
-            [side * 0.58, 82, zFront + 8], [side * 0.48, 82, zFront + 8]
-        ], '#294651', '#b5b5a2', 0.9);
-        drawProjectedLine(obs.track, [side * 0.40, 42, zFront + 35], [side * 0.40, 60, zFront + 35], '#25373c', 0.8);
+    // 方头蓝色驾驶室：封闭前面、收窄的车顶、车门与脚踏。
+    box(-0.42,0.42,26,104,0,cabEnd,'#416d7e','#73929b','#335766');
+    add([[-0.42,104,0],[0.42,104,0],[0.36,121,8],[-0.36,121,8]],'#688b95');
+    add([[-0.36,121,8],[0.36,121,8],[0.36,121,cabEnd],[-0.36,121,cabEnd]],'#91a9a5');
+    if (obs.track > 0) add([[-0.42,104,0],[-0.36,121,8],[-0.36,121,cabEnd],[-0.42,104,cabEnd]],'#537784');
+    if (obs.track < 0) add([[0.42,104,0],[0.42,104,cabEnd],[0.36,121,cabEnd],[0.36,121,8]],'#456b79');
+    add([[-0.31,121.3,18],[0.31,121.3,18],[0.31,121.3,67],[-0.31,121.3,67]],'#829e9e',true);
+    for (const x of [-0.27,0.27]) add([[x,121.6,19],[x+0.008,121.6,19],[x+0.008,121.6,64],[x,121.6,64]],'#afbab0',true);
+    // 细小褪色漆面与边缘磨损，在近处形成像素色块质感。
+    for(let i=0;i<26;i++) {
+        const x=-0.32+fleck(i+3)*0.61, z=13+fleck(i+41)*57;
+        const w=0.009+fleck(i+25)*0.02, d=1.5+fleck(i+61)*4;
+        add([[x,121.8,z],[x+w,121.8,z],[x+w,121.8,z+d],[x,121.8,z+d]],i%3?'#9aafa8':'#7c999a',true);
+    }
+    for (const side of [-1,1]) {
+        box(side*0.43-0.045,side*0.43+0.045,21,27,23,68,'#4d5b5b','#9ba79c','#30484e');
+        const x = side*0.422;
+        if ((side<0 && obs.track>0) || (side>0 && obs.track<0)) {
+            add([[x,75,16],[x,103,16],[x,103,61],[x,75,61]],'#1c3944');
+            add([[x+side*0.002,79,20],[x+side*0.002,99,20],[x+side*0.002,99,57],[x+side*0.002,79,57]],'#54747d',true);
+            add([[x,59,52],[x,63,52],[x,63,64],[x,59,64]],'#b0b6a5',true);
+        }
     }
 
-    // 面向玩家的挡风玻璃、格栅、灯和保险杠
-    drawProjectedPolygon(obs.track, [
-        [-0.34, 58, zFront], [0.34, 58, zFront], [0.31, 101, zFront], [-0.31, 101, zFront]
-    ], '#203943', '#26383d', 1.2);
-    drawProjectedPolygon(obs.track, [
-        [-0.27, 66, zFront - 0.2], [0.27, 66, zFront - 0.2], [0.25, 94, zFront - 0.2], [-0.25, 94, zFront - 0.2]
-    ], '#52717a');
-    drawProjectedPolygon(obs.track, [
-        [-0.025, 67, zFront - 0.5], [0.025, 67, zFront - 0.5], [0.025, 94, zFront - 0.5], [-0.025, 94, zFront - 0.5]
-    ], '#263e46');
-    drawProjectedLine(obs.track, [-0.22, 70, zFront - 0.6], [0.18, 89, zFront - 0.6], 'rgba(207, 223, 208, 0.55)', 1.1);
-    drawProjectedLine(obs.track, [-0.18, 65, zFront - 0.7], [0.17, 65, zFront - 0.7], '#182d34', 1.1);
-    drawProjectedPolygon(obs.track, [
-        [-0.21, 26, zFront - 0.3], [0.21, 26, zFront - 0.3], [0.21, 48, zFront - 0.3], [-0.21, 48, zFront - 0.3]
-    ], '#293d42', '#18282d', 0.8);
-    drawProjectedLine(obs.track, [-0.17, 34, zFront - 0.5], [0.17, 34, zFront - 0.5], '#8c9b91', 0.9);
-    for (let y = 30; y <= 43; y += 5) {
-        drawProjectedLine(obs.track, [-0.16, y, zFront - 0.55], [0.16, y, zFront - 0.55], '#52666a', 0.65);
+    // 挡风玻璃与遮阳檐：暗色密封条、两片玻璃、反光和雨刷。
+    panel(-0.356,0.356,66,104,-0.4,'#172e38',false);
+    panel(-0.321,-0.014,70,100,-0.6,'#3b5c6a',false);
+    panel(0.014,0.321,70,100,-0.6,'#456774',false);
+    add([[-0.30,94,-0.8],[0.30,99,-0.8],[0.30,91,-0.8],[-0.30,82,-0.8]],'#748f94',true);
+    panel(-0.014,0.014,69,101,-1.0,'#2a424c');
+    panel(-0.38,0.38,105,109,-1.1,'#a4b3a8');
+    panel(-0.36,0.36,103,105,-1.2,'#284854');
+    for (const x of [-0.28,0.055]) {
+        add([[x,72,-1.2],[x+0.19,77,-1.2],[x+0.19,75.5,-1.2],[x,70.5,-1.2]],'#1b2c33',true);
     }
-    // 小型圆形厂牌和前牌照，补足正面识别细节。
-    const badge = project(obs.track, 53, zFront - 0.65);
-    if (badge) {
-        ctx.fillStyle = '#d6bd73'; ctx.beginPath(); ctx.arc(badge.x, badge.y, Math.max(1.2, 2.8 * badge.scale), 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#3e5960'; ctx.beginPath(); ctx.arc(badge.x, badge.y, Math.max(0.7, 1.2 * badge.scale), 0, Math.PI * 2); ctx.fill();
+
+    // 前脸钣金、格栅、双灯和银灰保险杠。
+    panel(-0.39,0.39,50,64,-0.3,'#527e8a',false);
+    panel(-0.37,0.37,56,58,-0.5,'#91a5a4');
+    panel(-0.06,0.06,55,60,-0.7,'#bfc4b1');
+    for(let i=0;i<18;i++) {
+        const x=-0.37+fleck(i+80)*0.7, y=52+fleck(i+99)*11;
+        panel(x,x+0.008+fleck(i+35)*0.016,y,y+1.2,-0.6,i%4?'#688a91':'#b0ac91');
     }
-    drawProjectedPolygon(obs.track, [
-        [-0.13, 7, zFront - 1.1], [0.13, 7, zFront - 1.1], [0.13, 13, zFront - 1.1], [-0.13, 13, zFront - 1.1]
-    ], '#d6d0ae', '#29393b', 0.8);
-    for (const side of [-1, 1]) {
-        drawProjectedPolygon(obs.track, [
-            [side * 0.34 - 0.055, 34, zFront - 0.6], [side * 0.34 + 0.055, 34, zFront - 0.6],
-            [side * 0.34 + 0.055, 48, zFront - 0.6], [side * 0.34 - 0.055, 48, zFront - 0.6]
-        ], '#e4d19a', '#625b43', 0.7);
+    panel(-0.23,0.23,30,49,-0.4,'#1d3037',false);
+    for (let y=33; y<=46; y+=4) panel(-0.20,0.20,y,y+1.2,-0.7,'#687b7c');
+    for (const side of [-1,1]) {
+        const x = side*0.315;
+        panel(x-0.068,x+0.068,32,49,-0.5,'#263c44',false);
+        panel(x-0.052,x+0.052,35,46,-0.7,'#d2cba4',false);
+        panel(x-0.042,x+0.016,39,45,-0.9,'#f0e5bb');
+        panel(x-0.052,x+0.052,48,52,-0.8,'#c28c44');
+        // 后视镜支架与镜面位于驾驶室两侧，不伸入另一条跑道。
+        panel(side<0?-0.51:0.41,side<0?-0.41:0.51,79,82,-1.0,'#263d43');
+        const mx = side*0.515;
+        panel(mx-0.035,mx+0.035,76,94,-1.3,'#1d323b',false);
+        panel(mx-0.022,mx+0.022,79,91,-1.5,'#87a09d');
     }
-    drawProjectedPolygon(obs.track, [
-        [-0.46, 8, zFront - 0.8], [0.46, 8, zFront - 0.8], [0.46, 22, zFront - 0.8], [-0.46, 22, zFront - 0.8]
-    ], '#35474b', '#1f2e32', 1.1);
-    drawProjectedLine(obs.track, [-0.33, 13, zFront - 1], [0.33, 13, zFront - 1], '#9ba39a', 0.8);
-    ctx.restore();
+    box(-0.45,0.45,18,28,-3,3,'#728580','#a6afa0','#3f565c');
+    panel(-0.40,0.40,19,21,-3.2,'#344b52');
+    panel(-0.115,0.115,19,27,-3.4,'#dbd2ad');
+    panel(-0.08,0.08,21,23,-3.6,'#53615c');
+    obs.mesh = faces;
+    obs.faceCommands = faces.map(face => ({ type:'TRUCK_FACE', z:0, obj:obs, face }));
 }
+
+function drawTruckFace(obs, face) {
+    // 近裁面裁剪：车头驶出画面时保留可见车厢，避免整车突然消失。
+    const near = -FOV+14;
+    let vertices = face.vertices;
+    let clipped = false;
+    for (const v of vertices) if (v[2]+obs.z < near) { clipped = true; break; }
+    if (clipped) {
+        const visible = [];
+        for (let i=0; i<vertices.length; i++) {
+            const a=vertices[i], b=vertices[(i+1)%vertices.length];
+            const az=a[2]+obs.z, bz=b[2]+obs.z;
+            if (az>=near) visible.push(a);
+            if ((az>=near)!==(bz>=near)) {
+                const t=(near-az)/(bz-az);
+                visible.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,near-obs.z]);
+            }
+        }
+        vertices = visible;
+        if (vertices.length<3) return;
+    }
+    ctx.beginPath();
+    for (let i=0; i<vertices.length; i++) {
+        const v=vertices[i], scale=FOV/(FOV+obs.z+v[2]);
+        const x=W*0.5+(obs.track+v[0])*getTrackSpacing()*scale;
+        const y=H*HORIZON_RATIO+(getCamHeight()-v[1])*scale;
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.fillStyle=face.color;
+    ctx.fill();
+}
+
+function drawTruckShadow(obs) {
+    drawProjectedPolygon(obs.track, [[-0.46,0,obs.z],[0.46,0,obs.z],[0.46,0,obs.z+obs.length],[-0.46,0,obs.z+obs.length]], 'rgba(23,31,28,0.25)');
+}
+
 
 // 曼谷街头低空限高横杆：黑黄警示梁、金属支柱和底座，保留下方滑行通道
 function drawBangkokHighBarrier(obs) {
@@ -1421,8 +1459,6 @@ function drawObstacle(obs) {
         }
     } else if (obs.type === 'HIGH_BARRIER') {
         drawBangkokHighBarrier(obs);
-    } else if (obs.type === 'TRAIN' || obs.type === 'RAMP_TRAIN') {
-        drawBangkokTruck(obs);
     }
 }
 // 金币与道具绘制（沿用原版官方 ui.webp 图集）
@@ -1445,9 +1481,7 @@ function drawPickup(item) {
             ctx.fill();
         }
     } else {
-        let frameKey = 'icon-item-magnet.png';
-        if (item.type === 'SNEAKERS') frameKey = 'icon-item-sneakers.png';
-        else if (item.type === 'DOUBLE_COINS') frameKey = 'icon-item-multiplier.png';
+        const frameKey = 'icon-item-multiplier.png';
         if (atlasLoaded && UI_FRAMES[frameKey]) {
             const f = UI_FRAMES[frameKey];
             const sz = 34 * p.scale;
@@ -1512,9 +1546,8 @@ function drawPlayer() {
         } else if (player.state === 'JUMP') {
             sx = player.vy > 0 ? 0 : 190; sy = 205; sw = 190; sh = 190;
         } else {
-            const stepRate = Math.max(40, 95 - gameSpeed * 0.05);
             sw = sheetImg.width / 7;
-            sx = (Math.floor(performance.now() / stepRate) % 7) * sw;
+            sx = (Math.floor(player.animationTime * 14) % 7) * sw;
             sy = 0; sh = 205;
         }
 
@@ -1594,23 +1627,27 @@ function drawPlayer() {
 }
 
 function loop(now) {
-    const dt = Math.min(0.08, (now - lastTick) / 1000);
-    lastTick = now;
-
-    if (assetsReady) {
-        update(dt);
+    const dt=Math.min(0.05,Math.max(0,(now-lastTick)/1000));
+    lastTick=now;
+    if (assetsReady && !document.hidden) {
+        // 细分物理步长，30/60/120 Hz 下换道、跳跃与碰撞使用一致的时间尺度。
+        const steps=Math.max(1,Math.ceil(dt/(1/120)));
+        for(let i=0;i<steps;i++) update(dt/steps);
+        updateHUD();
         draw();
     }
-
     requestAnimationFrame(loop);
 }
+document.addEventListener('visibilitychange',()=>{lastTick=performance.now();});
 
 function startRun() {
     overlay.style.display = 'none';
     tipsOverlay.style.display = 'none';
     resetGame();
+    lastTick=performance.now();
     gameState = 'PLAYING';
-    if (!synthCtx) synthCtx = new AudioCtxClass();
+    if (!synthCtx && AudioCtxClass) synthCtx = new AudioCtxClass();
+    if (synthCtx?.state==='suspended') synthCtx.resume();
     backgroundMusic.play().catch(() => {});
 }
 
