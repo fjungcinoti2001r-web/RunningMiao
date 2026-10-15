@@ -343,6 +343,7 @@
         }
 
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -1019,7 +1020,7 @@ function updateBuffUI() {
     const key=flame+':'+cooldown+':'+doubled;
     if(key===buffKey) return;
     buffKey=key;
-    let label=flame>0?'火焰 '+flame+'s':cooldown>0?'火焰冷却 '+cooldown+'s':'火焰就绪 · 双击';
+    let label=flame>0?'火焰 '+flame+'s':cooldown>0?'冷却 '+cooldown+'s':'就绪 · 双击';
     let color=cooldown>0?'#94a3b8':'#fb923c';
     let markup='<div class="buff-pill" style="border-color:'+color+';animation:none;"><span>🔥</span><span>'+label+'</span></div>';
     if(doubled>0) markup+='<div class="buff-pill" style="border-color:#fbbf24;"><span>🪙</span><span>双倍金币 ('+doubled+'s)</span></div>';
@@ -1027,7 +1028,7 @@ function updateBuffUI() {
 }
 
 // ============================================================================
-// 核心渲染函数 (全套素材接入 + 背景横屏无缝循环播放)
+// 核心渲染函数
 // ============================================================================
 const renderQueue=[];
 function draw() {
@@ -1739,6 +1740,88 @@ btnPlay.onclick = () => {
 btnStartRun.onclick = startRun;
 
 requestAnimationFrame(loop);
+</script>
+    <!-- 排行榜悬浮按钮与面板 -->
+<div id="lb-wrapper" style="position: fixed; top: 15px; right: 15px; z-index: 9999; font-family: sans-serif;">
+  <button onclick="toggleLB()" style="background: #f59e0b; color: #000; font-weight: bold; border: 2px solid #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    🏆 排行榜
+  </button>
+
+  <div id="lb-modal" style="display: none; margin-top: 8px; background: rgba(0, 0, 0, 0.9); color: #fff; padding: 16px; border-radius: 12px; width: 260px; border: 1px solid #444; box-shadow: 0 8px 20px rgba(0,0,0,0.6);">
+    <h3 style="margin: 0 0 12px 0; text-align: center; color: #fbbf24; font-size: 16px;">🏆 全球排行榜 TOP 10</h3>
+    
+    <!-- 提交分数区 -->
+    <div id="lb-submit-box" style="display: flex; gap: 6px; margin-bottom: 12px;">
+      <input type="text" id="lb-name" placeholder="输入大名..." maxlength="10" style="flex: 1; padding: 6px; border-radius: 4px; border: none; outline: none;" />
+      <button onclick="submitMyScore()" style="background: #10b981; color: #fff; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">上传</button>
+    </div>
+
+    <!-- 排名列表 -->
+    <ol id="lb-list" style="margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.8; max-height: 240px; overflow-y: auto;">
+      <li>加载中...</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  // ⚠️ 1. 把下面两个引号里的内容，换成你刚才在 Supabase 复制的 URL 和 Key！
+  const SUPABASE_URL = 'https://bqzfsnarvyjjknujgtak.supabase.co/rest/v1/';
+  const SUPABASE_KEY = 'sb_publishable_oLeLQrpZKmti82UgjdaPWw_OaXsqn4S';
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // 控制排行榜开关
+  function toggleLB() {
+    const modal = document.getElementById('lb-modal');
+    if (modal.style.display === 'none') {
+      modal.style.display = 'block';
+      loadLeaderboard();
+    } else {
+      modal.style.display = 'none';
+    }
+  }
+
+  // 拉取前10名
+  async function loadLeaderboard() {
+    const listEl = document.getElementById('lb-list');
+    const { data, error } = await supabaseClient
+      .from('leaderboard')
+      .select('player_name, score')
+      .order('score', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      listEl.innerHTML = '<li style="color:#f87171;">读取失败，请检查配置</li>';
+      console.error(error);
+      return;
+    }
+    if (!data || data.length === 0) {
+      listEl.innerHTML = '<li>暂无记录，快来霸榜！</li>';
+    } else {
+      listEl.innerHTML = data.map(item => 
+        `<li><span style="color:#fde047;">${item.player_name}</span> <span style="float:right; color:#4ade80;">${item.score} 分</span></li>`
+      ).join('');
+    }
+  }
+
+  // 上传当前分数
+  async function submitMyScore() {
+    const nameInput = document.getElementById('lb-name');
+    const playerName = nameInput.value.trim() || '神秘玩家';
+
+    // 
+    const currentScore = typeof coins !== 'undefined' ? Math.floor(score) : 0;
+
+    const { error } = await supabaseClient
+      .from('leaderboard')
+      .insert([{ player_name: playerName, score: currentScore }]);
+
+    if (error) {
+      alert('上传失败: ' + error.message);
+    } else {
+      alert('🎉 分数上传成功！');
+      loadLeaderboard();
+    }
+  }
 </script>
 </body>
 </html>
