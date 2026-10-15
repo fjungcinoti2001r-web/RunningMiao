@@ -44,6 +44,22 @@
             width: 100%;
             height: 100%;
         }
+        #countdown-overlay {
+            position: absolute; inset: 0; z-index: 25;
+            display: none; align-items: center; justify-content: center;
+            flex-direction: column; gap: 14px;
+            background: rgba(18, 27, 26, 0.34); pointer-events: auto;
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+        .countdown-label { color: #fff7e9; font-size: 14px; font-weight: 700; letter-spacing: 4px; }
+        #countdown-number {
+            width: 124px; height: 124px; display: grid; place-items: center;
+            border: 2px solid rgba(255, 230, 177, .75); border-radius: 50%;
+            background: rgba(33, 44, 40, .72); color: #ffdc83;
+            font-size: 84px; font-weight: 900; line-height: 1;
+            box-shadow: 0 14px 35px rgba(0, 0, 0, .20);
+        }
+        .countdown-hint { color: #fff8e8; font-size: 13px; letter-spacing: 1px; }
         /* 顶部 HUD */
         #hud {
             position: absolute;
@@ -352,6 +368,11 @@
     </div>
 
     <div id="buff-container"></div>
+    <div id="countdown-overlay" aria-live="polite" aria-label="开跑倒计时">
+        <span class="countdown-label">准备出发</span>
+        <span id="countdown-number">3</span>
+        <span class="countdown-hint">跟随金币，跳跃或滑铲通过障碍</span>
+    </div>
 
     <div id="modal-overlay">
         <div class="hero-showcase">
@@ -370,13 +391,14 @@
     <div id="tips-overlay" role="dialog" aria-modal="true" aria-labelledby="tips-title">
         <div class="tips-card">
             <p class="tips-eyebrow">RUNNINGMIAO · 新手指引</p>
-            <h2 class="tips-title" id="tips-title">滑动，躲开障碍</h2>
+            <h2 class="tips-title" id="tips-title">跟随金币，越过障碍</h2>
             <ul class="tips-list">
-                <li><span class="tips-icon">↔</span><span><strong>左右滑动</strong><br>切换三条跑道，躲开迎面而来的货车和路障。</span></li>
-                <li><span class="tips-icon">↑ ↓</span><span><strong>上下滑动</strong><br>向上跳过矮路障，向下滑铲钻过高横杆。</span></li>
-                <li><span class="tips-icon">🔥</span><span><strong>火焰技能 · 双击屏幕</strong><br>点燃火焰；有效期间遇到碰撞时，可替你抵挡一次。</span></li>
+                <li><span class="tips-icon">↔</span><span><strong>左右滑动</strong><br>切换三条跑道，选择自己的金币路线。</span></li>
+                <li><span class="tips-icon">↑ ↓</span><span><strong>上下滑动</strong><br>向上跳过矮路障取金币；向下滑铲钻过横杆取金币。</span></li>
+                <li><span class="tips-icon">🪙</span><span><strong>跳上货车，收集金币</strong><br>上滑跳上车顶，沿车顶收集金币；双倍期间每枚计 2 金币。</span></li>
+                <li><span class="tips-icon">🔥</span><span><strong>火焰技能 · 双击屏幕</strong><br>持续 15 秒，抵挡一次碰撞；结束后冷却 5 秒，左上方显示剩余时间。</span></li>
             </ul>
-            <p class="tips-footnote">沿途收集金币，灵活变道，看看自己能跑多远。</p>
+            <p class="tips-footnote">开跑前有 3 秒准备；速度和障碍密度会逐渐增加。</p>
             <button id="btn-start-run" type="button">知道了，开始跑酷</button>
         </div>
     </div>
@@ -564,6 +586,26 @@ function playSynth(name) {
     if (!synthCtx) synthCtx = new AudioCtxClass();
     if (synthCtx.state === 'suspended') synthCtx.resume();
     const t = synthCtx.currentTime;
+    if (name === 'doubleCoins') {
+        // 双倍金币专用短提示：两个轻快音符，总长 215 ms，淡入淡出避免爆音。
+        for (const [index, frequency] of [880, 1320].entries()) {
+            const start = t + index * 0.085;
+            const note = synthCtx.createOscillator();
+            const envelope = synthCtx.createGain();
+            note.type = 'sine';
+            note.frequency.setValueAtTime(frequency, start);
+            envelope.gain.setValueAtTime(0, start);
+            envelope.gain.linearRampToValueAtTime(0.14, start + 0.008);
+            envelope.gain.exponentialRampToValueAtTime(0.001, start + 0.115);
+            envelope.gain.linearRampToValueAtTime(0, start + 0.13);
+            note.connect(envelope);
+            envelope.connect(synthCtx.destination);
+            note.onended = () => { note.disconnect(); envelope.disconnect(); };
+            note.start(start);
+            note.stop(start + 0.13);
+        }
+        return;
+    }
     const osc = synthCtx.createOscillator();
     const gain = synthCtx.createGain();
     osc.connect(gain); gain.connect(synthCtx.destination);
@@ -629,8 +671,12 @@ let gameState = 'START';
 let coins = 0;
 let runDistance = 0;
 let bgScrollOffset = 0;     // 背景兜底层横向循环滚动累计偏移量
-let gameSpeed = 980;
-const MAX_SPEED = 1680;
+const START_SPEED=800, NORMAL_SPEED=980, MAX_SPEED=1680;
+const FLAME_DURATION=15, FLAME_COOLDOWN=5;
+let gameSpeed=START_SPEED, runElapsed=0, countdownRemaining=0;
+const countdownOverlay=document.getElementById('countdown-overlay');
+const countdownNumber=document.getElementById('countdown-number');
+let displayedCountdown=0;
 
 const player = {
     track: 0,
@@ -642,6 +688,7 @@ const player = {
     state: 'RUN',
     rollTimer: 0,
     onTrain: false,
+    groundHeight: 0,
 
     // 火焰技能：短时碰撞保护
     flameTimer: 0,
@@ -657,13 +704,14 @@ const player = {
 let obstacles = [];
 let pickups = [];
 let sceneryElements = [];
-let nextSpawnZ = 850;
-let lastFlameSecond = -1;
+let nextSpawnZ = 1050;
 
 function resetGame() {
     coins = 0;
     runDistance = 0;
-    gameSpeed = 980;
+    gameSpeed = START_SPEED;
+    runElapsed = 0;
+    screenShake = 0;
 
     player.track = 0;
     player.currentX = 0;
@@ -674,6 +722,7 @@ function resetGame() {
     player.state = 'RUN';
     player.rollTimer = 0;
     player.onTrain = false;
+    player.groundHeight = 0;
     player.flameTimer = 0;
     player.flameCooldown = 0;
     player.doubleCoinsTimer = 0;
@@ -682,7 +731,7 @@ function resetGame() {
     obstacles = [];
     pickups = [];
     sceneryElements = [];
-    nextSpawnZ = 850;
+    nextSpawnZ = 1050;
     chunkIdx = 0;
     fillObstacleHorizon();
 
@@ -697,48 +746,90 @@ function resetGame() {
 function activateFlame() {
     if (gameState !== 'PLAYING') return;
     if (player.flameTimer <= 0 && player.flameCooldown <= 0) {
-        player.flameTimer = 30;
+        player.flameTimer = FLAME_DURATION;
         playAudio('unlock');
         updateBuffUI();
     }
 }
 
-// 每轮 12 波：7 波矮路障、3 波高横杆、2 波货车；奖励附在障碍波次中。
-const OBSTACLE_CYCLE = ['HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HIGH_BARRIER','HURDLE'];
-let chunkIdx = 0;
+// 矮障碍占多数；金币沿跳跃、滑铲和车顶路线布置。
+const OBSTACLE_CYCLE=['HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HIGH_BARRIER','HURDLE'];
+let chunkIdx=0;
+function addObstacleReward(obs) {
+    if(obs.type==='HURDLE') {
+        for(const [time,y] of [[-0.16,100],[-0.04,150],[0.09,160],[0.22,110]])
+            pickups.push({track:obs.track,type:'COIN',z:obs.z+time*gameSpeed,y,route:'JUMP'});
+    } else if(obs.type==='HIGH_BARRIER') {
+        for(const offset of [-75,0,75]) pickups.push({track:obs.track,type:'COIN',z:obs.z+offset,y:22,route:'ROLL'});
+    } else {
+        for(const at of [0.20,0.52,0.82]) pickups.push({track:obs.track,type:'COIN',z:obs.z+obs.length*at,y:TRAIN_HEIGHT+28,route:'ROOF',truck:obs});
+    }
+}
 function spawnChunk(spawnZ) {
-    const type=OBSTACLE_CYCLE[chunkIdx % OBSTACLE_CYCLE.length];
-    const lane=chunkIdx===0 ? 0 : Math.floor(Math.random()*3)-1;
-    const length=type==='TRAIN' ? 235 : 18;
-    const laneFree=(track, size) => !obstacles.some(o => o.track===track && spawnZ < o.z+o.length+100 && spawnZ+size+100 > o.z);
-    const freeLanes=[lane,-1,0,1].filter((v,i,a)=>a.indexOf(v)===i && laneFree(v,length));
-    if (!freeLanes.length) return;
-    const chosen=freeLanes[0];
-    obstacles.push({track:chosen,type,z:spawnZ,length,speed:0});
-    const open=[-1,0,1].filter(t=>t!==chosen);
-    // 最多占两条跑道，始终留出一条可通行路线。
-    if (chunkIdx>1 && Math.random()<0.32) {
-        const second=open[Math.floor(Math.random()*open.length)];
-        if (laneFree(second,18)) {
-            obstacles.push({track:second,type:'HURDLE',z:spawnZ,length:18,speed:0});
-            open.splice(open.indexOf(second),1);
+    const difficulty=Math.min(1,runElapsed/65);
+    const laneFree=(track,length)=>!obstacles.some(o=>!o.destroyed && o.track===track && spawnZ<o.z+o.length+105 && spawnZ+length+105>o.z);
+    const row=[];
+    // 约每六波出现一排全障碍，三条路线都可以通过跳跃或滑铲完成。
+    const fullRow=runElapsed>=14 && chunkIdx%6===5 && [-1,0,1].every(t=>laneFree(t,18));
+    if(fullRow) {
+        const allLow=chunkIdx%12===11;
+        const slideLane=Math.floor(Math.random()*3)-1;
+        for(const track of [-1,0,1]) row.push({track,type:!allLow&&track===slideLane?'HIGH_BARRIER':'HURDLE',z:spawnZ,length:18,speed:0});
+    } else {
+        const type=OBSTACLE_CYCLE[chunkIdx%OBSTACLE_CYCLE.length];
+        const length=type==='TRAIN'?430:18;
+        const first=chunkIdx===0?0:Math.floor(Math.random()*3)-1;
+        const lanes=[first,-1,0,1].filter((v,i,a)=>a.indexOf(v)===i && laneFree(v,length));
+        if(!lanes.length) return 0.9;
+        row.push({track:lanes[0],type,z:spawnZ,length,speed:0});
+        if(chunkIdx>2 && Math.random()<0.12+difficulty*0.30) {
+            const other=[-1,0,1].filter(t=>t!==lanes[0] && laneFree(t,18));
+            if(other.length) row.push({track:other[Math.floor(Math.random()*other.length)],type:'HURDLE',z:spawnZ,length:18,speed:0});
         }
     }
-    const coinLane=open[Math.floor(Math.random()*open.length)];
-    for(let i=0;i<3;i++) pickups.push({track:coinLane,type:'COIN',z:spawnZ+35+i*52,y:22});
-    if (chunkIdx>0 && chunkIdx%9===0) pickups.push({track:coinLane,type:'DOUBLE_COINS',z:spawnZ+220,y:35});
+    for(const obs of row) {obstacles.push(obs);addObstacleReward(obs);}
+    const open=[-1,0,1].filter(t=>!row.some(o=>o.track===t));
+    // 少量地面金币作为喘息；主要奖励都在障碍物所在的跑道。
+    if(open.length && chunkIdx%4===2) {
+        const track=open[0];
+        for(const offset of [20,95]) pickups.push({track,type:'COIN',z:spawnZ+offset,y:28});
+    }
+    if(chunkIdx>0 && chunkIdx%9===0) pickups.push({track:open[0]??row[0].track,type:'DOUBLE_COINS',z:spawnZ-200,y:30});
     chunkIdx++;
+    const hasTruck=row.some(o=>o.type==='TRAIN');
+    const hasLow=row.some(o=>o.type==='HURDLE');
+    // 跳跃落地、下车和连续动作都有明确的时间余量。
+    return Math.max(1.02-difficulty*0.32+Math.random()*0.08,
+        fullRow?0.96:hasTruck?(430/gameSpeed+0.48):hasLow?0.90:0.70);
 }
 function fillObstacleHorizon() {
-    while (nextSpawnZ<2600) {
-        spawnChunk(nextSpawnZ);
-        // 按反应时间留间隔，随速度渐进收紧；货车车身长度也包含在安全间距中。
-        const seconds=Math.max(0.48,0.66-(gameSpeed-980)/5000)+Math.random()*0.09;
-        nextSpawnZ+=Math.max(410,gameSpeed*seconds);
+    while(nextSpawnZ<2800) {
+        const seconds=spawnChunk(nextSpawnZ);
+        nextSpawnZ+=Math.max(430,gameSpeed*seconds);
     }
 }
+function endFlame() {
+    player.flameTimer=0;
+    player.flameCooldown=FLAME_COOLDOWN;
+    updateBuffUI();
+}
+function updateCountdown(dt) {
+    countdownRemaining=Math.max(0,countdownRemaining-dt);
+    const digit=Math.max(1,Math.ceil(countdownRemaining-0.000001));
+    if(digit!==displayedCountdown) {
+        displayedCountdown=digit;
+        countdownNumber.textContent=digit;
+    }
+    if(countdownRemaining<=0.000001) {
+        countdownOverlay.style.display='none';
+        countdownOverlay.setAttribute('aria-hidden','true');
+        touchId=null;lastTapTime=0;
+        gameState='PLAYING';
+    }
+}
+
 function beginJump() {
-    player.vy=640;
+    player.vy=800;
     player.state='JUMP';
     player.rollTimer=0;
     player.jumpBuffer=0;
@@ -755,7 +846,7 @@ function handleAction(act) {
     } else if (act === 'JUMP') {
         player.jumpBuffer=0.12;
         const groundHeight = player.onTrain ? TRAIN_HEIGHT : 0;
-        if (player.y <= groundHeight + 6) beginJump();
+        if (player.y <= groundHeight + 6 && player.vy<=0) beginJump();
     } else if (act === 'ROLL') {
         player.jumpBuffer=0;
         if (player.y > (player.onTrain ? TRAIN_HEIGHT : 0)) {
@@ -817,109 +908,82 @@ canvas.addEventListener('dblclick', e => { e.preventDefault(); activateFlame(); 
 
 let lastTick = performance.now();
 function update(dt) {
-    // 即使在菜单待机页面，背景也保持缓慢横屏循环流动，局内随车速加快循环
-    const activeSpeed = (gameState === 'PLAYING') ? gameSpeed : 120;
-    bgScrollOffset += activeSpeed * 0.14 * dt;
-
-    if (gameState !== 'PLAYING') return;
-
-    gameSpeed = Math.min(MAX_SPEED, gameSpeed + dt * 18);
+    if(gameState==='COUNTDOWN') {updateCountdown(dt);return;}
+    if(gameState!=='PLAYING') return;
+    runElapsed+=dt;
+    const warmup=Math.min(1,runElapsed/8);
+    const smooth=warmup*warmup*(3-2*warmup);
+    gameSpeed=Math.min(MAX_SPEED,START_SPEED+(NORMAL_SPEED-START_SPEED)*smooth+Math.max(0,runElapsed-8)*10);
     const distanceStep=gameSpeed*dt;
-    runDistance += distanceStep;
-    nextSpawnZ -= distanceStep;
-    player.animationTime += dt*Math.min(1.65,gameSpeed/980);
+    runDistance+=distanceStep;nextSpawnZ-=distanceStep;
+    bgScrollOffset+=distanceStep*0.14;
+    player.animationTime+=dt*Math.min(1.65,gameSpeed/980);
     player.jumpBuffer=Math.max(0,player.jumpBuffer-dt);
-
-    player.currentX += (player.track - player.currentX) * (1-Math.exp(-28*dt));
-
-    if (player.flameTimer > 0) player.flameTimer = Math.max(0, player.flameTimer - dt);
-    const flameSecond = Math.ceil(player.flameTimer);
-    if (flameSecond !== lastFlameSecond) {
-        lastFlameSecond = flameSecond;
-        updateBuffUI();
-    }
-    if (player.flameCooldown > 0) player.flameCooldown = Math.max(0, player.flameCooldown - dt);
-    if (player.doubleCoinsTimer > 0) player.doubleCoinsTimer = Math.max(0, player.doubleCoinsTimer - dt);
-
-    if (player.state === 'ROLL') {
-        player.rollTimer -= dt;
-        if (player.rollTimer <= 0) player.state = 'RUN';
+    player.currentX+=(player.track-player.currentX)*(1-Math.exp(-28*dt));
+    if(player.flameTimer>0) {
+        player.flameTimer=Math.max(0,player.flameTimer-dt);
+        if(player.flameTimer===0) endFlame();
+    } else if(player.flameCooldown>0) player.flameCooldown=Math.max(0,player.flameCooldown-dt);
+    player.doubleCoinsTimer=Math.max(0,player.doubleCoinsTimer-dt);
+    player.stumbleTimer=Math.max(0,player.stumbleTimer-dt);
+    if(player.state==='ROLL') {
+        player.rollTimer-=dt;
+        if(player.rollTimer<=0) player.state='RUN';
     }
 
-    if (player.stumbleTimer > 0) player.stumbleTimer = Math.max(0, player.stumbleTimer - dt);
-
-    const GRAVITY = 1950;
-    player.vy -= GRAVITY * dt;
-    player.y += player.vy * dt;
-
-    const groundH = 0;
-    player.onTrain = false;
-
-    if (player.y <= groundH) {
-        player.y = groundH;
-        player.vy = 0;
-        if (player.state === 'JUMP') player.state = 'RUN';
-        if (player.jumpBuffer>0) beginJump();
+    for(const obs of obstacles) {obs.previousZ=obs.z;obs.z-=distanceStep;}
+    const previousY=player.y;
+    player.vy-=1950*dt;
+    player.y+=player.vy*dt;
+    const support=obstacles.find(o=>o.type==='TRAIN' && !o.destroyed && Math.abs(o.track-player.currentX)<0.48 && o.z<=18 && o.z+o.length>=-12 && previousY>=TRAIN_HEIGHT-1);
+    player.groundHeight=support?TRAIN_HEIGHT:0;
+    player.onTrain=false;
+    // 必须从平台上方下落才会落上车顶，避免从侧面/底部吸到车上。
+    if(player.y<=player.groundHeight && player.vy<=0) {
+        player.y=player.groundHeight;player.vy=0;
+        player.onTrain=!!support;
+        if(player.state==='JUMP') player.state='RUN';
+        if(player.jumpBuffer>0) beginJump();
     }
-
-    for (let i = obstacles.length - 1; i >= 0; i--) {
-        const obs = obstacles[i];
-        const previousZ=obs.z;
-        obs.z -= (gameSpeed + obs.speed) * dt;
-        const isTruck=obs.type==='TRAIN';
-        const inHitZone=isTruck ? (obs.z<=20 && obs.z+obs.length>=-15) : (obs.z<=20 && previousZ+obs.length>=-15);
-        if (player.stumbleTimer <= 0 && Math.abs(obs.track-player.currentX)<0.56 && inHitZone) {
-            if (isTruck) {
-                if (player.y < TRAIN_HEIGHT - 8) triggerCollision('撞上货车了！', obs);
-            } else if (obs.type === 'HURDLE') {
-                if (player.y < 42) triggerCollision('下次记得上滑跳过矮路障。', obs);
-            } else if (obs.type === 'HIGH_BARRIER') {
-                if (player.state !== 'ROLL' || player.y > 28) triggerCollision('下次记得下滑钻过高横杆。', obs);
-            }
+    for(let i=obstacles.length-1;i>=0;i--) {
+        const obs=obstacles[i], isTruck=obs.type==='TRAIN';
+        const inHitZone=isTruck?(obs.z<=18 && obs.z+obs.length>=-12):(obs.z<=18 && obs.previousZ+obs.length>=-12);
+        if(player.stumbleTimer<=0 && Math.abs(obs.track-player.currentX)<0.52 && inHitZone) {
+            if(isTruck && player.y<TRAIN_HEIGHT-1) triggerCollision('提前上滑，跳上货车收集金币。',obs);
+            else if(obs.type==='HURDLE' && player.y<48) triggerCollision('上滑跳过矮路障，跟随空中的金币。',obs);
+            else if(obs.type==='HIGH_BARRIER' && (player.state!=='ROLL' || player.y>28)) triggerCollision('下滑钻过高横杆，收集下面的金币。',obs);
         }
-
-        if (gameState !== 'PLAYING') return;
-        if (obs.destroyed || obs.z + obs.length < -240) obstacles.splice(i, 1);
+        if(gameState!=='PLAYING') return;
+        if(obs.destroyed || obs.z+obs.length < -240) obstacles.splice(i,1);
     }
 
-    for (let i = pickups.length - 1; i >= 0; i--) {
-        const item = pickups[i];
-        item.z -= gameSpeed * dt;
-
-        if (Math.abs(item.track - player.track) < 0.45 && Math.abs(item.z) < 30) {
-            if (Math.abs(item.y - player.y) < 55) {
-                if (item.type === 'COIN') {
-                    coins += (player.doubleCoinsTimer > 0 ? 2 : 1);
-                    playAudio('coin');
-                } else if (item.type === 'DOUBLE_COINS') {
-                    player.doubleCoinsTimer = 15;
-                    playAudio('unlock');
-                }
-                updateBuffUI();
-                pickups.splice(i, 1);
-                continue;
+    for(let i=pickups.length-1;i>=0;i--) {
+        const item=pickups[i];
+        item.previousZ=item.z;item.z-=distanceStep;
+        if(item.truck?.destroyed) {pickups.splice(i,1);continue;}
+        const near=Math.abs(item.track-player.currentX)<0.44 && item.z<=32 && item.previousZ>=-32;
+        const rightHeight=Math.abs(item.y-(player.y+28))<42;
+        const rightAction=item.route!=='ROLL' || (player.state==='ROLL' && player.y<28);
+        if(near && rightHeight && rightAction) {
+            if(item.type==='COIN') {
+                coins+=(player.doubleCoinsTimer>0?2:1);
+                playAudio('coin');
+            } else if(item.type==='DOUBLE_COINS') {
+                player.doubleCoinsTimer=15;playAudio('doubleCoins');
             }
+            pickups.splice(i,1);continue;
         }
-
-        if (item.z < -60) pickups.splice(i, 1);
+        if(item.z < -65) pickups.splice(i,1);
     }
-
     fillObstacleHorizon();
-
-
-    for (let pole of sceneryElements) {
-        pole.z -= gameSpeed * dt;
-        if (pole.z < -100) pole.z += 2400;
-    }
-
+    for(const pole of sceneryElements) {pole.z-=distanceStep;if(pole.z < -100) pole.z+=2400;}
 }
 
 let screenShake = 0;
 let hudCoins=-1, hudDouble=null, buffKey='';
 function triggerCollision(reason, obstacle) {
     if (player.flameTimer > 0) {
-        player.flameTimer=0;
-        player.flameCooldown=5;
+        endFlame();
         player.stumbleTimer=0.65;
         if (obstacle) obstacle.destroyed=true;
         playAudio('shieldCrash');
@@ -951,12 +1015,13 @@ function updateHUD() {
     updateBuffUI();
 }
 function updateBuffUI() {
-    const flame=Math.ceil(player.flameTimer), doubled=Math.ceil(player.doubleCoinsTimer);
-    const key=flame+':'+doubled;
+    const flame=Math.ceil(player.flameTimer),cooldown=Math.ceil(player.flameCooldown),doubled=Math.ceil(player.doubleCoinsTimer);
+    const key=flame+':'+cooldown+':'+doubled;
     if(key===buffKey) return;
     buffKey=key;
-    let markup='';
-    if(flame>0) markup+='<div class="buff-pill" style="border-color:#fb923c;"><span>🔥</span><span>火焰 ('+flame+'s)</span></div>';
+    let label=flame>0?'火焰 '+flame+'s':cooldown>0?'火焰冷却 '+cooldown+'s':'火焰就绪 · 双击';
+    let color=cooldown>0?'#94a3b8':'#fb923c';
+    let markup='<div class="buff-pill" style="border-color:'+color+';animation:none;"><span>🔥</span><span>'+label+'</span></div>';
     if(doubled>0) markup+='<div class="buff-pill" style="border-color:#fbbf24;"><span>🪙</span><span>双倍金币 ('+doubled+'s)</span></div>';
     buffContainer.innerHTML=markup;
 }
@@ -1276,6 +1341,13 @@ function buildTruckMesh(obs) {
         }
     }
 
+    // 承重盖板与驾驶室车顶齐平，金币路线可以从车头一直跑到车尾。
+    box(-0.39,0.39,108,120,cabEnd,rear,'#6c745e','#99977a','#606d5a');
+    for(let z=cabEnd+8;z<rear;z+=42) {
+        add([[-0.38,120.3,z],[0.38,120.3,z],[0.38,120.3,z+1.6],[-0.38,120.3,z+1.6]],'#777d65',true);
+    }
+    for(const x of [-0.24,0.24]) add([[x,120.5,cabEnd],[x+0.025,120.5,cabEnd],[x+0.025,120.5,rear],[x,120.5,rear]],'#c3b992',true);
+
     // 铁笼沿货斗边界搭建，前端在驾驶室后方，全部参与统一遮挡。
     for (const side of [-1,1]) {
         const x = side*0.425;
@@ -1497,16 +1569,16 @@ function drawPickup(item) {
 
 // 绘制主角【王伟】（支持 wangwei_spritesheet.png 序列帧播放 + 8拍多关节动态兜底）
 function drawPlayer() {
-    const pGround = project(player.currentX, 0, 0);
+    const pGround = project(player.currentX, player.groundHeight, 0);
     const p = project(player.currentX, player.y, 0);
     if (!p || !pGround) return;
 
     // 阴影
-    const shadowDist = player.y - (player.onTrain ? TRAIN_HEIGHT : 0);
+    const shadowDist = player.y - player.groundHeight;
     const sScale = Math.max(0.2, 1 - shadowDist / 260);
     ctx.fillStyle = `rgba(0,0,0,${0.45 * sScale})`;
     ctx.beginPath();
-    ctx.ellipse(p.x, pGround.y - (player.onTrain ? (TRAIN_HEIGHT * pGround.scale) : 0), 34 * sScale, 10 * sScale, 0, 0, Math.PI*2);
+    ctx.ellipse(p.x, pGround.y, 34 * sScale, 10 * sScale, 0, 0, Math.PI*2);
     ctx.fill();
 
     // 火焰技能四帧横向序列；保持透明背景，贴着角色脚底循环播放。
@@ -1645,7 +1717,12 @@ function startRun() {
     tipsOverlay.style.display = 'none';
     resetGame();
     lastTick=performance.now();
-    gameState = 'PLAYING';
+    gameState = 'COUNTDOWN';
+    countdownRemaining=3;displayedCountdown=3;
+    countdownNumber.textContent='3';
+    countdownOverlay.style.display='flex';
+    countdownOverlay.setAttribute('aria-hidden','false');
+    touchId=null;lastTapTime=0;
     if (!synthCtx && AudioCtxClass) synthCtx = new AudioCtxClass();
     if (synthCtx?.state==='suspended') synthCtx.resume();
     backgroundMusic.play().catch(() => {});
