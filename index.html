@@ -342,8 +342,58 @@
             .event-caption { bottom: 10px; }
         }
 
+        #result-overlay {
+            position:absolute; inset:0; z-index:40; display:none; flex-direction:column;
+            background:linear-gradient(180deg,#fffdf8,#f5eee4); color:#443c33;
+            font-family:"PingFang SC","Microsoft YaHei",sans-serif;
+        }
+        .result-scroll {flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:24px 22px 18px;}
+        .result-brand {display:flex; align-items:center; gap:10px; margin-bottom:18px;}
+        .result-brand img {width:42px; height:42px; border-radius:50%; border:1.5px solid #e9703a; padding:2px; background:#fff;}
+        .result-brand strong {display:block; font-size:16px; letter-spacing:.2px;}
+        .result-brand span {display:block; margin-top:3px; font-size:11px; color:#a08d78; letter-spacing:2px;}
+        .result-summary {padding:16px; text-align:center; border:1px solid #efdfcb; border-radius:20px; background:rgba(255,255,255,.78);}
+        .result-summary h2 {font-size:16px; font-weight:650; margin:0;}
+        #result-reason {font-size:12px; color:#a08d78; margin:7px 0 12px; line-height:1.6;}
+        .result-score {display:flex; justify-content:center; align-items:baseline; gap:8px;}
+        #result-coins {font-size:48px; font-weight:900; color:#d97828; line-height:1.1; font-variant-numeric:tabular-nums;}
+        .result-score span {font-size:12px; color:#9a805d;}
+        #score-form {margin-top:18px;}
+        #score-form label {display:block; font-size:13px; font-weight:650; margin-bottom:8px;}
+        #leaderboard-name {width:100%; border:1px solid #ddcfbd; border-radius:12px; background:#fff; padding:12px 14px; font:16px "PingFang SC","Microsoft YaHei",sans-serif; color:#443c33; user-select:text; -webkit-user-select:text; outline:none;}
+        #leaderboard-name:focus {border-color:#dc8b4f; box-shadow:0 0 0 3px rgba(220,139,79,.12);}
+        #leaderboard-name:disabled {background:#f1eade; color:#806e5b; -webkit-text-fill-color:#806e5b; opacity:1;}
+        #btn-submit-score {width:100%; margin-top:10px; padding:13px 10px; border:0; border-radius:12px; background:#db7037; color:white; font:700 14px "PingFang SC","Microsoft YaHei",sans-serif; cursor:pointer;}
+        #btn-submit-score:disabled {background:#baab95; cursor:default;}
+        #submit-status {min-height:32px; font-size:11px; line-height:1.65; color:#a08d78; margin:8px 2px 0;}
+        #submit-status[data-kind="success"] {color:#288252;}
+        #submit-status[data-kind="error"],#ranking-status[data-kind="error"] {color:#b6583f;}
+        .ranking-section {margin-top:18px; padding-top:16px; border-top:1px solid #e8dccb;}
+        .ranking-header {display:flex; justify-content:space-between; align-items:center; gap:12px;}
+        .ranking-header h3 {font-size:17px; margin:0;}
+        .ranking-caption {font-size:10px; color:#a08d78; margin:7px 0 13px;}
+        #btn-refresh-ranking {border:1px solid #ded1bf; border-radius:30px; color:#806e5b; background:transparent; padding:7px 13px; cursor:pointer; font:12px "PingFang SC","Microsoft YaHei",sans-serif;}
+        #btn-refresh-ranking:disabled {opacity:.5; cursor:default;}
+        #ranking-list {list-style:none; padding:0; margin:0;}
+        .ranking-row {display:grid; grid-template-columns:32px minmax(0,1fr) auto; align-items:center; gap:10px; min-height:54px; padding:8px 10px; margin-bottom:7px; background:rgba(255,255,255,.7); border:1px solid transparent; border-radius:12px;}
+        .ranking-row.is-own {border-color:#dba25d; background:#fff4d9;}
+        .rank-position {font-size:14px; color:#b0a18f; font-weight:750; font-variant-numeric:tabular-nums; text-align:center;}
+        .podium-1 {color:#b77b19; background:#f9e6aa; border-radius:9px; padding:6px 0;}
+        .podium-2 {color:#7b8586; background:#e7ece9; border-radius:9px; padding:6px 0;}
+        .podium-3 {color:#9c7059; background:#f1dfd1; border-radius:9px; padding:6px 0;}
+        .rank-info {min-width:0; display:flex; align-items:center; gap:6px;}
+        .rank-name {overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13px; font-weight:600;}
+        .rank-own-tag {flex-shrink:0; font-size:9px; color:#ab732e; background:#f5e3b9; border-radius:4px; padding:2px 4px;}
+        .rank-value {font-size:16px; font-weight:750; font-variant-numeric:tabular-nums; color:#b87a24; white-space:nowrap;}
+        .rank-value small {display:block; font-size:9px; font-weight:400; text-align:right; margin-top:2px; color:#ae9b80;}
+        #ranking-status {font-size:12px; color:#a08d78; text-align:center; line-height:1.7;}
+        #ranking-status:not(:empty) {padding:16px 4px;}
+        #personal-ranking {font-size:12px; color:#9b6a29; text-align:center; line-height:1.6;}
+        #personal-ranking:not(:empty) {padding:10px; background:#f8ebd1; border-radius:10px; margin-top:10px;}
+        .result-footer {flex-shrink:0; padding:12px 22px max(14px,env(safe-area-inset-bottom)); border-top:1px solid #eadfce; background:#faf5ec;}
+        #btn-result-replay {width:100%; padding:13px; font-size:16px; box-shadow:0 5px 16px rgba(40,151,93,.14);}
+        @media(max-height:650px){.result-scroll{padding-top:15px;}.result-brand{margin-bottom:10px;}.result-summary{padding:12px;}#result-coins{font-size:40px;}}
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -388,6 +438,31 @@
         <p class="brand-credit">制作：林科森</p>
         <p class="event-caption">活动 · Produce xm101 纪念游戏</p>
     </div>
+
+    <section id="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-heading" aria-hidden="true">
+        <div class="result-scroll" id="result-scroll">
+            <div class="result-brand"><img src="./assets/characters/runningmiao-avatar.png" alt=""><div><strong>RunningMiao</strong><span>每一次奔跑，都值得记录</span></div></div>
+            <div class="result-summary">
+                <h2 id="result-heading">本次跑酷结束</h2>
+                <p id="result-reason"></p>
+                <div class="result-score"><strong id="result-coins">0</strong><span>本局金币</span></div>
+            </div>
+            <form id="score-form" novalidate>
+                <label for="leaderboard-name">玩家姓名</label>
+                <input id="leaderboard-name" name="player_name" type="text" maxlength="40" autocomplete="nickname" enterkeyhint="send" placeholder="输入姓名或昵称，1–20 个字" aria-describedby="submit-status">
+                <button id="btn-submit-score" type="submit">上传成绩 · 查看排行</button>
+                <p id="submit-status" role="status" aria-live="polite"></p>
+            </form>
+            <section class="ranking-section" aria-labelledby="ranking-heading">
+                <div class="ranking-header"><h3 id="ranking-heading">金币排行榜</h3><button id="btn-refresh-ranking" type="button">刷新</button></div>
+                <p class="ranking-caption">前 50 条成绩 · 同分按提交时间先后排列</p>
+                <ol id="ranking-list"></ol>
+                <p id="ranking-status" role="status" aria-live="polite"></p>
+                <p id="personal-ranking" role="status" aria-live="polite"></p>
+            </section>
+        </div>
+        <div class="result-footer"><button class="btn-run" id="btn-result-replay" type="button">再跑一次</button></div>
+    </section>
 
     <div id="tips-overlay" role="dialog" aria-modal="true" aria-labelledby="tips-title">
         <div class="tips-card">
@@ -569,6 +644,7 @@ for (let key in soundFiles) {
 
 const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
 let synthCtx = null;
+let shortNoiseBuffer = null;
 function playAudio(name) {
     if (audioCache[name]) {
         try {
@@ -587,6 +663,50 @@ function playSynth(name) {
     if (!synthCtx) synthCtx = new AudioCtxClass();
     if (synthCtx.state === 'suspended') synthCtx.resume();
     const t = synthCtx.currentTime;
+    if (name === 'flameStart' || name === 'obstacleBreak') {
+        // 短促点火 / 干脆碎裂：复用噪声缓冲，无需加载额外音频文件。
+        const breaking = name === 'obstacleBreak';
+        const duration = breaking ? 0.30 : 0.22;
+        if (!shortNoiseBuffer || shortNoiseBuffer.sampleRate !== synthCtx.sampleRate) {
+            shortNoiseBuffer = synthCtx.createBuffer(1, Math.ceil(synthCtx.sampleRate * 0.32), synthCtx.sampleRate);
+            const samples = shortNoiseBuffer.getChannelData(0);
+            for (let i=0; i<samples.length; i++) samples[i] = Math.random()*2-1;
+        }
+        const noise = synthCtx.createBufferSource();
+        const filter = synthCtx.createBiquadFilter();
+        const envelope = synthCtx.createGain();
+        noise.buffer = shortNoiseBuffer;
+        filter.type = breaking ? 'bandpass' : 'lowpass';
+        filter.Q.value = breaking ? 0.6 : 0.7;
+        filter.frequency.setValueAtTime(breaking ? 2400 : 650, t);
+        filter.frequency.exponentialRampToValueAtTime(breaking ? 900 : 1800, t+duration*0.35);
+        filter.frequency.exponentialRampToValueAtTime(450, t+duration);
+        envelope.gain.setValueAtTime(0, t);
+        envelope.gain.linearRampToValueAtTime(breaking ? 0.48 : 0.30, t+0.006);
+        if (breaking) {
+            envelope.gain.exponentialRampToValueAtTime(0.025, t+0.04);
+            envelope.gain.linearRampToValueAtTime(0.32, t+0.048);
+            envelope.gain.exponentialRampToValueAtTime(0.015, t+0.095);
+            envelope.gain.linearRampToValueAtTime(0.18, t+0.108);
+        }
+        envelope.gain.exponentialRampToValueAtTime(0.001, t+duration-0.015);
+        envelope.gain.linearRampToValueAtTime(0, t+duration);
+        noise.connect(filter); filter.connect(envelope); envelope.connect(synthCtx.destination);
+        noise.onended = () => { noise.disconnect(); filter.disconnect(); envelope.disconnect(); };
+        noise.start(t); noise.stop(t+duration);
+        const body = synthCtx.createOscillator(), bodyGain = synthCtx.createGain();
+        body.type = breaking ? 'triangle' : 'sine';
+        body.frequency.setValueAtTime(breaking ? 210 : 130, t);
+        body.frequency.exponentialRampToValueAtTime(breaking ? 65 : 270, t+0.12);
+        bodyGain.gain.setValueAtTime(0, t);
+        bodyGain.gain.linearRampToValueAtTime(0.13, t+0.008);
+        bodyGain.gain.exponentialRampToValueAtTime(0.001, t+0.13);
+        bodyGain.gain.linearRampToValueAtTime(0, t+0.15);
+        body.connect(bodyGain); bodyGain.connect(synthCtx.destination);
+        body.onended = () => { body.disconnect(); bodyGain.disconnect(); };
+        body.start(t); body.stop(t+0.15);
+        return;
+    }
     if (name === 'doubleCoins') {
         // 双倍金币专用短提示：两个轻快音符，总长 215 ms，淡入淡出避免爆音。
         for (const [index, frequency] of [880, 1320].entries()) {
@@ -650,6 +770,20 @@ resize();
 const FOV = 340;
 const HORIZON_RATIO = 0.48;
 const TRAIN_HEIGHT = 120;
+// 站立与碰撞共用同一脚底范围，避免换道时先失去支撑、再撞上自己的车。
+const CONTACT_HALF_WIDTH = 0.50;
+const CONTACT_FRONT_Z = 8;
+const CONTACT_REAR_Z = -6;
+const ROOF_EDGE_TOLERANCE = 6;
+function overlapsTruckFootprint(obs) {
+    return !obs.destroyed && Math.abs(obs.track-player.currentX)<CONTACT_HALF_WIDTH
+        && obs.z<=CONTACT_FRONT_Z && obs.z+obs.length>=CONTACT_REAR_Z;
+}
+function hitsBarrierBeam() {
+    // 横杆实体在 84～124 高度；滑铲可从下面穿过，脚底高于横杆也不会撞。
+    const bodyHeight=player.state==='ROLL'?52:108;
+    return player.y<124-4 && player.y+bodyHeight>84+4;
+}
 
 function getTrackSpacing() {
     return (W || 480) * 0.27;
@@ -748,7 +882,7 @@ function activateFlame() {
     if (gameState !== 'PLAYING') return;
     if (player.flameTimer <= 0 && player.flameCooldown <= 0) {
         player.flameTimer = FLAME_DURATION;
-        playAudio('unlock');
+        playAudio('flameStart');
         updateBuffUI();
     }
 }
@@ -758,35 +892,29 @@ const OBSTACLE_CYCLE=['HURDLE','HIGH_BARRIER','HURDLE','TRAIN','HURDLE','HURDLE'
 let chunkIdx=0;
 function addObstacleReward(obs) {
     if(obs.type==='HURDLE') {
-        for(const [time,y] of [[-0.16,100],[-0.04,150],[0.09,160],[0.22,110]])
-            pickups.push({track:obs.track,type:'COIN',z:obs.z+time*gameSpeed,y,route:'JUMP'});
+        // 短而低的三币弧线；固定世界间距，速度变快也不会拉长整排金币。
+        for(const [offset,y] of [[-60,130],[0,142],[60,130]])
+            pickups.push({track:obs.track,type:'COIN',z:obs.z+offset,y,route:'JUMP',obstacle:obs});
     } else if(obs.type==='HIGH_BARRIER') {
-        for(const offset of [-75,0,75]) pickups.push({track:obs.track,type:'COIN',z:obs.z+offset,y:22,route:'ROLL'});
+        for(const offset of [-75,0,75]) pickups.push({track:obs.track,type:'COIN',z:obs.z+offset,y:22,route:'ROLL',obstacle:obs});
     } else {
-        for(const at of [0.20,0.52,0.82]) pickups.push({track:obs.track,type:'COIN',z:obs.z+obs.length*at,y:TRAIN_HEIGHT+28,route:'ROOF',truck:obs});
+        for(const at of [0.20,0.52,0.82]) pickups.push({track:obs.track,type:'COIN',z:obs.z+obs.length*at,y:TRAIN_HEIGHT+28,route:'ROOF',truck:obs,obstacle:obs});
     }
 }
 function spawnChunk(spawnZ) {
     const difficulty=Math.min(1,runElapsed/65);
     const laneFree=(track,length)=>!obstacles.some(o=>!o.destroyed && o.track===track && spawnZ<o.z+o.length+105 && spawnZ+length+105>o.z);
     const row=[];
-    // 约每六波出现一排全障碍，三条路线都可以通过跳跃或滑铲完成。
-    const fullRow=runElapsed>=14 && chunkIdx%6===5 && [-1,0,1].every(t=>laneFree(t,18));
-    if(fullRow) {
-        const allLow=chunkIdx%12===11;
-        const slideLane=Math.floor(Math.random()*3)-1;
-        for(const track of [-1,0,1]) row.push({track,type:!allLow&&track===slideLane?'HIGH_BARRIER':'HURDLE',z:spawnZ,length:18,speed:0});
-    } else {
-        const type=OBSTACLE_CYCLE[chunkIdx%OBSTACLE_CYCLE.length];
-        const length=type==='TRAIN'?430:18;
-        const first=chunkIdx===0?0:Math.floor(Math.random()*3)-1;
-        const lanes=[first,-1,0,1].filter((v,i,a)=>a.indexOf(v)===i && laneFree(v,length));
-        if(!lanes.length) return 0.9;
-        row.push({track:lanes[0],type,z:spawnZ,length,speed:0});
-        if(chunkIdx>2 && Math.random()<0.12+difficulty*0.30) {
-            const other=[-1,0,1].filter(t=>t!==lanes[0] && laneFree(t,18));
-            if(other.length) row.push({track:other[Math.floor(Math.random()*other.length)],type:'HURDLE',z:spawnZ,length:18,speed:0});
-        }
+    // 每波最多两个障碍，始终保留一条空跑道。
+    const type=OBSTACLE_CYCLE[chunkIdx%OBSTACLE_CYCLE.length];
+    const length=type==='TRAIN'?430:18;
+    const first=chunkIdx===0?0:Math.floor(Math.random()*3)-1;
+    const lanes=[first,-1,0,1].filter((v,i,a)=>a.indexOf(v)===i && laneFree(v,length));
+    if(!lanes.length) return 0.9;
+    row.push({track:lanes[0],type,z:spawnZ,length,speed:0});
+    if(chunkIdx>2 && Math.random()<0.12+difficulty*0.30) {
+        const other=[-1,0,1].filter(t=>t!==lanes[0] && laneFree(t,18));
+        if(other.length) row.push({track:other[Math.floor(Math.random()*other.length)],type:'HURDLE',z:spawnZ,length:18,speed:0});
     }
     for(const obs of row) {obstacles.push(obs);addObstacleReward(obs);}
     const open=[-1,0,1].filter(t=>!row.some(o=>o.track===t));
@@ -801,7 +929,7 @@ function spawnChunk(spawnZ) {
     const hasLow=row.some(o=>o.type==='HURDLE');
     // 跳跃落地、下车和连续动作都有明确的时间余量。
     return Math.max(1.02-difficulty*0.32+Math.random()*0.08,
-        fullRow?0.96:hasTruck?(430/gameSpeed+0.48):hasLow?0.90:0.70);
+        hasTruck?(430/gameSpeed+0.48):hasLow?0.90:0.70);
 }
 function fillObstacleHorizon() {
     while(nextSpawnZ<2800) {
@@ -860,6 +988,7 @@ function handleAction(act) {
 }
 
 window.addEventListener('keydown', e => {
+    if (e.target instanceof HTMLElement && (e.target.matches('input,textarea,select') || e.target.isContentEditable)) return;
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') handleAction('LEFT');
     else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') handleAction('RIGHT');
     else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
@@ -936,10 +1065,11 @@ function update(dt) {
     const previousY=player.y;
     player.vy-=1950*dt;
     player.y+=player.vy*dt;
-    const support=obstacles.find(o=>o.type==='TRAIN' && !o.destroyed && Math.abs(o.track-player.currentX)<0.48 && o.z<=18 && o.z+o.length>=-12 && previousY>=TRAIN_HEIGHT-1);
+    const support=obstacles.find(o=>o.type==='TRAIN' && overlapsTruckFootprint(o)
+        && previousY>=TRAIN_HEIGHT-ROOF_EDGE_TOLERANCE);
     player.groundHeight=support?TRAIN_HEIGHT:0;
     player.onTrain=false;
-    // 必须从平台上方下落才会落上车顶，避免从侧面/底部吸到车上。
+    // 从车顶上方下落时先处理落地，边缘留 6 单位容差；地面撞车不会被吸到车顶。
     if(player.y<=player.groundHeight && player.vy<=0) {
         player.y=player.groundHeight;player.vy=0;
         player.onTrain=!!support;
@@ -948,11 +1078,18 @@ function update(dt) {
     }
     for(let i=obstacles.length-1;i>=0;i--) {
         const obs=obstacles[i], isTruck=obs.type==='TRAIN';
-        const inHitZone=isTruck?(obs.z<=18 && obs.z+obs.length>=-12):(obs.z<=18 && obs.previousZ+obs.length>=-12);
-        if(player.stumbleTimer<=0 && Math.abs(obs.track-player.currentX)<0.52 && inHitZone) {
-            if(isTruck && player.y<TRAIN_HEIGHT-1) triggerCollision('提前上滑，跳上货车收集金币。',obs);
-            else if(obs.type==='HURDLE' && player.y<48) triggerCollision('上滑跳过矮路障，跟随空中的金币。',obs);
-            else if(obs.type==='HIGH_BARRIER' && (player.state!=='ROLL' || player.y>28)) triggerCollision('下滑钻过高横杆，收集下面的金币。',obs);
+        if(obs.destroyed) {obstacles.splice(i,1);continue;}
+        // 矮障碍保留跨帧检测，避免高速时穿过；货车使用与车顶支撑相同的范围。
+        const inHitZone=isTruck?overlapsTruckFootprint(obs):(
+            Math.abs(obs.track-player.currentX)<CONTACT_HALF_WIDTH
+            && obs.z<=CONTACT_FRONT_Z && obs.previousZ+obs.length>=CONTACT_REAR_Z);
+        if(player.stumbleTimer<=0 && inHitZone) {
+            if(isTruck && support!==obs && player.y<TRAIN_HEIGHT-ROOF_EDGE_TOLERANCE)
+                triggerCollision('提前上滑，跳上货车收集金币。',obs);
+            else if(obs.type==='HURDLE' && player.y<48)
+                triggerCollision('上滑跳过矮路障，跟随空中的金币。',obs);
+            else if(obs.type==='HIGH_BARRIER' && hitsBarrierBeam())
+                triggerCollision('下滑钻过高横杆，或从横杆上方越过。',obs);
         }
         if(gameState!=='PLAYING') return;
         if(obs.destroyed || obs.z+obs.length < -240) obstacles.splice(i,1);
@@ -963,7 +1100,9 @@ function update(dt) {
         item.previousZ=item.z;item.z-=distanceStep;
         if(item.truck?.destroyed) {pickups.splice(i,1);continue;}
         const near=Math.abs(item.track-player.currentX)<0.44 && item.z<=32 && item.previousZ>=-32;
-        const rightHeight=Math.abs(item.y-(player.y+28))<42;
+        const rightHeight=item.route==='JUMP'
+            ? player.y>=48 && Math.abs(item.y-(player.y+28))<64
+            : Math.abs(item.y-(player.y+28))<42;
         const rightAction=item.route!=='ROLL' || (player.state==='ROLL' && player.y<28);
         if(near && rightHeight && rightAction) {
             if(item.type==='COIN') {
@@ -983,11 +1122,12 @@ function update(dt) {
 let screenShake = 0;
 let hudCoins=-1, hudDouble=null, buffKey='';
 function triggerCollision(reason, obstacle) {
+    if(gameState!=='PLAYING' || obstacle?.destroyed) return;
     if (player.flameTimer > 0) {
         endFlame();
         player.stumbleTimer=0.65;
         if (obstacle) obstacle.destroyed=true;
-        playAudio('shieldCrash');
+        playAudio('obstacleBreak');
         screenShake=3;
         updateBuffUI();
         return;
@@ -998,10 +1138,8 @@ function triggerCollision(reason, obstacle) {
 
 function gameOver(msg) {
     gameState = 'GAMEOVER';
-    modalTitle.innerText = '本次跑酷结束';
-    modalSub.innerHTML = `<span style="color:#ef4444;font-weight:bold;">${msg}</span><br><br>本局收集金币: <strong>${coins}</strong>`;
-    btnPlay.innerText = '再跑一次';
-    overlay.style.display = 'flex';
+    overlay.style.display = 'none';
+    showResults(msg);
 }
 
 function updateHUD() {
@@ -1020,7 +1158,7 @@ function updateBuffUI() {
     const key=flame+':'+cooldown+':'+doubled;
     if(key===buffKey) return;
     buffKey=key;
-    let label=flame>0?'火焰 '+flame+'s':cooldown>0?'冷却 '+cooldown+'s':'就绪 · 双击';
+    let label=flame>0?'火焰 '+flame+'s':cooldown>0?'火焰冷却 '+cooldown+'s':'火焰就绪 · 双击';
     let color=cooldown>0?'#94a3b8':'#fb923c';
     let markup='<div class="buff-pill" style="border-color:'+color+';animation:none;"><span>🔥</span><span>'+label+'</span></div>';
     if(doubled>0) markup+='<div class="buff-pill" style="border-color:#fbbf24;"><span>🪙</span><span>双倍金币 ('+doubled+'s)</span></div>';
@@ -1028,8 +1166,14 @@ function updateBuffUI() {
 }
 
 // ============================================================================
-// 核心渲染函数
+// 核心渲染函数 (全套素材接入 + 背景横屏无缝循环播放)
 // ============================================================================
+// 远处先从路面露出，进入判断距离前已完整显示；与帧率无关。
+const ROAD_FAR_Z=2800;
+function roadReveal(z) {
+    const progress=Math.max(0,Math.min(1,(2400-z)/500));
+    return progress*progress*(3-2*progress);
+}
 const renderQueue=[];
 function draw() {
     ctx.save();
@@ -1052,6 +1196,7 @@ function draw() {
     renderQueue.length=0;
     for (const p of sceneryElements) renderQueue.push({type:'POLE',z:p.z,obj:p});
     for (const obs of obstacles) {
+        if (roadReveal(obs.z)<=0) continue;
         if (obs.type==='TRAIN') {
             if(!obs.mesh) buildTruckMesh(obs);
             drawTruckShadow(obs);
@@ -1146,7 +1291,7 @@ function drawTracks(horizonY) {
     ctx.drawImage(roadCache,0,0);
 }
 function paintTracks(horizonY,ctx) {
-    const maxZ = 1600;
+    const maxZ = ROAD_FAR_Z;
     const minZ = -180;
     const roadHalfW = 1.68;
     const farL = project(-roadHalfW, 0, maxZ);
@@ -1228,6 +1373,17 @@ function paintTracks(horizonY,ctx) {
         }
     }
     ctx.restore();
+    // 路面尽头融入背景，避免出现一条硬的贴图接缝。此渐变仅在缓存重建时生成。
+    if (farL) {
+        ctx.save();
+        ctx.globalCompositeOperation='destination-out';
+        const fade=ctx.createLinearGradient(0,farL.y-1,0,farL.y+14);
+        fade.addColorStop(0,'rgba(0,0,0,1)');
+        fade.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=fade;
+        ctx.fillRect(0,farL.y-1,W,16);
+        ctx.restore();
+    }
 }
 
 // 两侧曼谷街景电线杆：只绘制高杆身，电线使用背景图中的原生细节。
@@ -1431,6 +1587,9 @@ function buildTruckMesh(obs) {
 }
 
 function drawTruckFace(obs, face) {
+    const reveal=roadReveal(obs.z);
+    if(reveal<=0) return;
+    const buriedHeight=(1-reveal)*160;
     // 近裁面裁剪：车头驶出画面时保留可见车厢，避免整车突然消失。
     const near = -FOV+14;
     let vertices = face.vertices;
@@ -1450,11 +1609,25 @@ function drawTruckFace(obs, face) {
         vertices = visible;
         if (vertices.length<3) return;
     }
+    if(buriedHeight>0) {
+        // 在世界坐标的地平面裁剪，每个车身面从自己的接地点露出。
+        const aboveGround=[];
+        for(let i=0;i<vertices.length;i++) {
+            const a=vertices[i],b=vertices[(i+1)%vertices.length];
+            if(a[1]>=buriedHeight) aboveGround.push(a);
+            if((a[1]>=buriedHeight)!==(b[1]>=buriedHeight)) {
+                const fraction=(buriedHeight-a[1])/(b[1]-a[1]);
+                aboveGround.push([a[0]+(b[0]-a[0])*fraction,buriedHeight,a[2]+(b[2]-a[2])*fraction]);
+            }
+        }
+        vertices=aboveGround;
+        if(vertices.length<3) return;
+    }
     ctx.beginPath();
     for (let i=0; i<vertices.length; i++) {
         const v=vertices[i], scale=FOV/(FOV+obs.z+v[2]);
         const x=W*0.5+(obs.track+v[0])*getTrackSpacing()*scale;
-        const y=H*HORIZON_RATIO+(getCamHeight()-v[1])*scale;
+        const y=H*HORIZON_RATIO+(getCamHeight()-v[1]+buriedHeight)*scale;
         if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
     ctx.closePath();
@@ -1463,7 +1636,10 @@ function drawTruckFace(obs, face) {
 }
 
 function drawTruckShadow(obs) {
+    ctx.save();
+    ctx.globalAlpha*=roadReveal(obs.z);
     drawProjectedPolygon(obs.track, [[-0.46,0,obs.z],[0.46,0,obs.z],[0.46,0,obs.z+obs.length],[-0.46,0,obs.z+obs.length]], 'rgba(23,31,28,0.25)');
+    ctx.restore();
 }
 
 
@@ -1512,6 +1688,13 @@ function drawBangkokHighBarrier(obs) {
 function drawObstacle(obs) {
     const pFront = project(obs.track, 0, obs.z);
     if (!pFront) return;
+    const reveal=roadReveal(obs.z);
+    if(reveal<=0) return;
+    ctx.save();
+    if(reveal<1) {
+        ctx.beginPath(); ctx.rect(0,0,W,Math.max(0,pFront.y+1)); ctx.clip();
+        ctx.translate(0,(1-reveal)*(obs.type==='HURDLE'?66:124)*pFront.scale);
+    }
 
     if (obs.type === 'HURDLE') {
         const pTop = project(obs.track, 66, obs.z);
@@ -1533,24 +1716,30 @@ function drawObstacle(obs) {
     } else if (obs.type === 'HIGH_BARRIER') {
         drawBangkokHighBarrier(obs);
     }
+    ctx.restore();
 }
 // 金币与道具绘制（沿用原版官方 ui.webp 图集）
 function drawPickup(item) {
+    const reveal=roadReveal(item.obstacle?.z ?? item.z);
+    const opacity=Math.max(0,Math.min(1,(reveal-0.55)/0.45));
+    if(opacity<=0) return;
     const p = project(item.track, item.y, item.z);
     if (!p) return;
 
+    ctx.save();
+    ctx.globalAlpha*=opacity;
     const atlasLoaded = ASSETS.uiAtlas.loaded;
     const uiAtlasImg = ASSETS.uiAtlas.img;
 
     if (item.type === 'COIN') {
         if (atlasLoaded && UI_FRAMES['icon-coin.png']) {
             const f = UI_FRAMES['icon-coin.png'];
-            const sz = 24 * p.scale;
+            const sz = (item.route==='JUMP'?18:24) * p.scale;
             ctx.drawImage(uiAtlasImg, f.x, f.y, f.w, f.h, p.x - sz/2, p.y - sz/2, sz, sz);
         } else {
             ctx.fillStyle = '#fbbf24';
             ctx.beginPath();
-            ctx.arc(p.x, p.y, Math.max(3, 12 * p.scale), 0, Math.PI*2);
+            ctx.arc(p.x, p.y, Math.max(2, (item.route==='JUMP'?9:12) * p.scale), 0, Math.PI*2);
             ctx.fill();
         }
     } else {
@@ -1566,6 +1755,7 @@ function drawPickup(item) {
             ctx.fill();
         }
     }
+    ctx.restore();
 }
 
 // 绘制主角【王伟】（支持 wangwei_spritesheet.png 序列帧播放 + 8拍多关节动态兜底）
@@ -1714,6 +1904,7 @@ function loop(now) {
 document.addEventListener('visibilitychange',()=>{lastTick=performance.now();});
 
 function startRun() {
+    closeResults();
     overlay.style.display = 'none';
     tipsOverlay.style.display = 'none';
     resetGame();
@@ -1729,6 +1920,190 @@ function startRun() {
     backgroundMusic.play().catch(() => {});
 }
 
+// 本局金币数写入已有 leaderboard 表的 score 字段。
+const LEADERBOARD_API='https://bqzfsnarvyjjknujgtak.supabase.co/rest/v1/leaderboard';
+const LEADERBOARD_KEY='sb_publishable_oLeLQrpZKmti82UgjdaPWw_OaXsqn4S';
+const resultOverlay=document.getElementById('result-overlay');
+const resultCoins=document.getElementById('result-coins');
+const resultReason=document.getElementById('result-reason');
+const scoreForm=document.getElementById('score-form');
+const playerNameInput=document.getElementById('leaderboard-name');
+const submitScoreButton=document.getElementById('btn-submit-score');
+const submitStatus=document.getElementById('submit-status');
+const rankingList=document.getElementById('ranking-list');
+const rankingStatus=document.getElementById('ranking-status');
+const rankingRefresh=document.getElementById('btn-refresh-ranking');
+const personalRanking=document.getElementById('personal-ranking');
+let finishedRun=null, rankingRequestVersion=0;
+
+function resultIsCurrent(run) {
+    return finishedRun===run && gameState==='GAMEOVER' && resultOverlay.style.display==='flex';
+}
+function setSubmitMessage(message, kind='') {
+    submitStatus.textContent=message;
+    submitStatus.dataset.kind=kind;
+}
+function syncSubmitControls(run) {
+    if(!resultIsCurrent(run)) return;
+    playerNameInput.disabled=run.state!=='idle';
+    submitScoreButton.disabled=run.state==='submitting'||run.state==='submitted'||run.state==='checking';
+    submitScoreButton.textContent=run.state==='submitted'?'成绩已上传':run.state==='submitting'?'正在上传…':run.state==='checking'?'正在核对…':run.state==='uncertain'?'核对提交结果':'上传成绩 · 查看排行';
+}
+function showResults(reason) {
+    const run={score:coins,name:'',createdAt:null,id:null,state:'idle'};
+    finishedRun=run;
+    resultCoins.textContent=run.score.toLocaleString('zh-CN');
+    resultReason.textContent=reason;
+    rankingList.replaceChildren();
+    personalRanking.textContent='';
+    setSubmitMessage('上传后，你的姓名和本局金币数将显示在榜单中。');
+    try {playerNameInput.value=localStorage.getItem('runningmiao.playerName')||'';} catch {playerNameInput.value='';}
+    resultOverlay.style.display='flex';
+    resultOverlay.setAttribute('aria-hidden','false');
+    document.getElementById('result-scroll').scrollTop=0;
+    syncSubmitControls(run);
+    loadRankings(run);
+}
+function closeResults() {
+    finishedRun=null;
+    rankingRequestVersion++;
+    resultOverlay.style.display='none';
+    resultOverlay.setAttribute('aria-hidden','true');
+    playerNameInput.blur();
+}
+async function leaderboardRequest(query='', options={}) {
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),12000);
+    try {
+        const response=await fetch(LEADERBOARD_API+(query?'?'+query:''),{
+            ...options, signal:controller.signal, cache:'no-store',
+            headers:{apikey:LEADERBOARD_KEY,...options.headers}
+        });
+        const body=await response.json().catch(()=>null);
+        if(!response.ok) {
+            const error=new Error(body?.message||'Leaderboard request failed');
+            error.status=response.status;error.code=body?.code;throw error;
+        }
+        return Array.isArray(body)?body:[];
+    } finally {clearTimeout(timer);}
+}
+function rankingErrorMessage(error) {
+    if(error.status===401||error.status===403||error.code==='42501') return '排行榜暂未开放访问，请联系制作者。';
+    if(error.status===404||error.code==='PGRST205') return '排行榜暂未就绪，请稍后再试。';
+    return '暂时连不上排行榜，请检查网络后重试。';
+}
+function renderRankings(rows,run) {
+    const fragment=document.createDocumentFragment();
+    let ownRank=0;
+    rows.forEach((row,index)=>{
+        const li=document.createElement('li');
+        li.className='ranking-row';
+        const isOwn=run.state==='submitted'&&run.id!==null&&String(row.id)===String(run.id);
+        if(isOwn){li.classList.add('is-own');ownRank=index+1;}
+        const position=document.createElement('span');
+        position.className='rank-position'+(index<3?' podium-'+(index+1):'');
+        position.textContent=String(index+1).padStart(2,'0');
+        const info=document.createElement('div');info.className='rank-info';
+        const name=document.createElement('span');name.className='rank-name';
+        name.textContent=String(row.player_name||'未命名玩家');
+        info.append(name);
+        if(isOwn){const tag=document.createElement('span');tag.className='rank-own-tag';tag.textContent='本局';info.append(tag);}
+        const value=document.createElement('span');value.className='rank-value';
+        value.textContent=Number(row.score).toLocaleString('zh-CN');
+        const unit=document.createElement('small');unit.textContent='金币';value.append(unit);
+        li.append(position,info,value);fragment.append(li);
+    });
+    rankingList.replaceChildren(fragment);
+    rankingStatus.textContent=rows.length?'':'还没有成绩，来抢第一名吧。';
+    if(run.state==='submitted') personalRanking.textContent=ownRank?'本局排名第 '+ownRank+' 名':rows.length>=50?'成绩已上传，本局暂未进入前 50。':'成绩已上传，可稍后刷新查看本局排名。';
+}
+async function loadRankings(run=finishedRun) {
+    if(!run||!resultIsCurrent(run)) return;
+    const version=++rankingRequestVersion;
+    rankingRefresh.disabled=true;
+    rankingStatus.textContent='正在加载排行榜…';
+    rankingStatus.dataset.kind='';
+    const query=new URLSearchParams({select:'id,player_name,score,created_at',order:'score.desc.nullslast,created_at.asc.nullslast,id.asc',limit:'50'});
+    try {
+        const rows=await leaderboardRequest(query.toString());
+        if(!resultIsCurrent(run)||version!==rankingRequestVersion) return;
+        renderRankings(rows.filter(row=>row.score!==null&&Number.isSafeInteger(Number(row.score))&&Number(row.score)>=0),run);
+    } catch(error) {
+        if(!resultIsCurrent(run)||version!==rankingRequestVersion) return;
+        rankingStatus.textContent=rankingErrorMessage(error);
+        rankingStatus.dataset.kind='error';
+    } finally {
+        if(resultIsCurrent(run)&&version===rankingRequestVersion) rankingRefresh.disabled=false;
+    }
+}
+function markScoreSubmitted(run,row) {
+    run.state='submitted';run.id=row?.id??null;
+    try {localStorage.setItem('runningmiao.playerName',run.name);} catch {}
+    if(!resultIsCurrent(run)) return;
+    setSubmitMessage('上传成功！本局 '+run.score.toLocaleString('zh-CN')+' 金币已记录。','success');
+    syncSubmitControls(run);
+}
+async function findSubmittedScore(run) {
+    const query=new URLSearchParams({select:'id,player_name,score,created_at',created_at:'eq.'+run.createdAt,score:'eq.'+run.score,limit:'10'});
+    const rows=await leaderboardRequest(query.toString());
+    return rows.find(row=>row.player_name===run.name&&Number(row.score)===run.score);
+}
+async function submitFinishedScore(event) {
+    event.preventDefault();
+    const run=finishedRun;
+    if(!run||!resultIsCurrent(run)||['submitting','submitted','checking'].includes(run.state)) return;
+    if(run.state==='uncertain') {
+        run.state='checking';syncSubmitControls(run);
+        try {
+            const row=await findSubmittedScore(run);
+            if(row){markScoreSubmitted(run,row);await loadRankings(run);}
+            else {
+                run.state='idle';
+                if(resultIsCurrent(run)) setSubmitMessage('尚未查到这次成绩，可以重新点击上传。','error');
+            }
+        } catch(error) {
+            run.state='uncertain';
+            if(resultIsCurrent(run)) setSubmitMessage('暂时无法核对，请联网后再试。','error');
+        } finally {syncSubmitControls(run);}
+        return;
+    }
+    const name=playerNameInput.value.trim().replace(/\s+/gu,' ');
+    if(!name||Array.from(name).length>20||/[\u0000-\u001f\u007f]/u.test(name)) {
+        setSubmitMessage('请输入 1–20 个字的姓名或昵称。','error');playerNameInput.focus();return;
+    }
+    if(!Number.isSafeInteger(run.score)||run.score<0) {setSubmitMessage('这次成绩无效，请重新开始游戏。','error');return;}
+    if(navigator.onLine===false) {setSubmitMessage('当前网络未连接，联网后再上传。','error');return;}
+    run.name=name;run.createdAt??=new Date().toISOString();run.state='submitting';
+    playerNameInput.value=name;
+    syncSubmitControls(run);setSubmitMessage('正在保存本局成绩…');
+    try {
+        const rows=await leaderboardRequest('',{
+            method:'POST',headers:{'Content-Type':'application/json',Prefer:'return=representation'},
+            // id 由数据库生成；时间戳固定用于断网后的提交结果核对。
+            body:JSON.stringify({player_name:run.name,score:run.score,created_at:run.createdAt})
+        });
+        markScoreSubmitted(run,rows[0]);
+        await loadRankings(run);
+    } catch(error) {
+        if(!error.status||error.status>=500) {
+            // 超时可能发生在服务器保存之后，先核对，避免重复写入。
+            run.state='uncertain';
+            try {
+                const row=await findSubmittedScore(run);
+                if(row){markScoreSubmitted(run,row);await loadRankings(run);return;}
+            } catch {}
+            if(resultIsCurrent(run)) setSubmitMessage('还未确认上传结果，请点击“核对提交结果”。','error');
+        } else {
+            run.state='idle';
+            if(resultIsCurrent(run)) setSubmitMessage(error.status===401||error.status===403||error.code==='42501'?'成绩上传暂未开放，请联系制作者。':'上传未成功，请稍后重试。','error');
+        }
+    } finally {syncSubmitControls(run);}
+}
+scoreForm.addEventListener('submit',submitFinishedScore);
+rankingRefresh.addEventListener('click',()=>loadRankings());
+document.getElementById('btn-result-replay').addEventListener('click',startRun);
+
+
 btnPlay.onclick = () => {
     if (gameState === 'GAMEOVER') {
         startRun();
@@ -1740,88 +2115,6 @@ btnPlay.onclick = () => {
 btnStartRun.onclick = startRun;
 
 requestAnimationFrame(loop);
-</script>
-    <!-- 排行榜悬浮按钮与面板 -->
-<div id="lb-wrapper" style="position: fixed; top: 15px; right: 15px; z-index: 9999; font-family: sans-serif;">
-  <button onclick="toggleLB()" style="background: #f59e0b; color: #000; font-weight: bold; border: 2px solid #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-    🏆 排行榜
-  </button>
-
-  <div id="lb-modal" style="display: none; margin-top: 8px; background: rgba(0, 0, 0, 0.9); color: #fff; padding: 16px; border-radius: 12px; width: 260px; border: 1px solid #444; box-shadow: 0 8px 20px rgba(0,0,0,0.6);">
-    <h3 style="margin: 0 0 12px 0; text-align: center; color: #fbbf24; font-size: 16px;">🏆 全球排行榜 TOP 10</h3>
-    
-    <!-- 提交分数区 -->
-    <div id="lb-submit-box" style="display: flex; gap: 6px; margin-bottom: 12px;">
-      <input type="text" id="lb-name" placeholder="输入大名..." maxlength="10" style="flex: 1; padding: 6px; border-radius: 4px; border: none; outline: none;" />
-      <button onclick="submitMyScore()" style="background: #10b981; color: #fff; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">上传</button>
-    </div>
-
-    <!-- 排名列表 -->
-    <ol id="lb-list" style="margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.8; max-height: 240px; overflow-y: auto;">
-      <li>加载中...</li>
-    </ol>
-  </div>
-</div>
-
-<script>
-  // ⚠️ 1. 把下面两个引号里的内容，换成你刚才在 Supabase 复制的 URL 和 Key！
-  const SUPABASE_URL = 'https://bqzfsnarvyjjknujgtak.supabase.co/rest/v1/';
-  const SUPABASE_KEY = 'sb_publishable_oLeLQrpZKmti82UgjdaPWw_OaXsqn4S';
-  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-  // 控制排行榜开关
-  function toggleLB() {
-    const modal = document.getElementById('lb-modal');
-    if (modal.style.display === 'none') {
-      modal.style.display = 'block';
-      loadLeaderboard();
-    } else {
-      modal.style.display = 'none';
-    }
-  }
-
-  // 拉取前10名
-  async function loadLeaderboard() {
-    const listEl = document.getElementById('lb-list');
-    const { data, error } = await supabaseClient
-      .from('leaderboard')
-      .select('player_name, score')
-      .order('score', { ascending: false })
-      .limit(10);
-
-    if (error) {
-      listEl.innerHTML = '<li style="color:#f87171;">读取失败，请检查配置</li>';
-      console.error(error);
-      return;
-    }
-    if (!data || data.length === 0) {
-      listEl.innerHTML = '<li>暂无记录，快来霸榜！</li>';
-    } else {
-      listEl.innerHTML = data.map(item => 
-        `<li><span style="color:#fde047;">${item.player_name}</span> <span style="float:right; color:#4ade80;">${item.score} 分</span></li>`
-      ).join('');
-    }
-  }
-
-  // 上传当前分数
-  async function submitMyScore() {
-    const nameInput = document.getElementById('lb-name');
-    const playerName = nameInput.value.trim() || '神秘玩家';
-
-    // 
-    const currentScore = typeof coins !== 'undefined' ? Math.floor(score) : 0;
-
-    const { error } = await supabaseClient
-      .from('leaderboard')
-      .insert([{ player_name: playerName, score: currentScore }]);
-
-    if (error) {
-      alert('上传失败: ' + error.message);
-    } else {
-      alert('🎉 分数上传成功！');
-      loadLeaderboard();
-    }
-  }
 </script>
 </body>
 </html>
