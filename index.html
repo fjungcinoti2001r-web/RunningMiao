@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="icon" type="image/png" href="./assets/characters/runningmiao-avatar.png?v=2">
     <link rel="apple-touch-icon" href="./assets/characters/runningmiao-avatar.png?v=2">
-    <title>RunningMiao - 王伟专属跑酷</title>
+    <title>RunningMiao-王伟专属跑酷</title>
     <style>
         @font-face {
             font-family: 'TitanOne';
@@ -124,7 +124,7 @@
             align-items: center;
             gap: 8px;
             box-shadow: 0 6px 18px rgba(0,0,0,0.5);
-            /* 避免游戏运行时每帧重新计算毛玻璃合成。 */
+            /* 避免游戏运行时每帧重新计算。 */
         }
         .hud-info {
             display: flex;
@@ -461,7 +461,7 @@
     </div>
 
     <div id="music-control">
-        <button id="music-toggle" type="button" aria-label="背景音乐音量设置" aria-controls="music-panel" aria-expanded="false">
+        <button id="music-toggle" type="button" aria-label="背景音乐" aria-controls="music-panel" aria-expanded="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/></svg>
             <span id="music-toggle-label">音乐</span>
         </button>
@@ -474,7 +474,7 @@
     <div id="countdown-overlay" aria-live="polite" aria-label="开跑倒计时">
         <span class="countdown-label">准备出发</span>
         <span id="countdown-number">3</span>
-        <span class="countdown-hint">跟随金币，跳跃或滑铲通过障碍</span>
+        <span class="countdown-hint">跳跃、滑铲通过障碍，收集金币</span>
     </div>
 
     <div id="modal-overlay">
@@ -487,15 +487,15 @@
         <h1 id="modal-title">RunningMiao</h1>
         <div class="brand-divider"></div>
         <button class="btn-run" id="btn-play">进入游戏</button>
-        <p class="brand-credit">制作：林科森</p>
+        <p class="brand-credit">制作：林科森 | 测试：热带鱼师傅</p>
         <p class="event-caption">活动 · Produce xm101 纪念游戏</p>
     </div>
 
     <section id="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-heading" aria-hidden="true">
         <div class="result-scroll" id="result-scroll">
-            <div class="result-brand"><img src="./assets/characters/runningmiao-avatar.png" alt=""><div><strong>RunningMiao</strong><span>每一次奔跑，都值得记录</span></div></div>
+            <div class="result-brand"><img src="./assets/characters/runningmiao-avatar.png" alt=""><div><strong>RunningMiao</strong><span>演员谢苗超话制作</span></div></div>
             <div class="result-summary">
-                <h2 id="result-heading">本次跑酷结束</h2>
+                <h2 id="result-heading">Game Over</h2>
                 <p id="result-reason"></p>
                 <div class="result-score"><strong id="result-coins">0</strong><span>本局金币</span></div>
             </div>
@@ -521,13 +521,13 @@
             <p class="tips-eyebrow">RUNNINGMIAO · 新手指引</p>
             <h2 class="tips-title" id="tips-title">跟随金币，越过障碍</h2>
             <ul class="tips-list">
-                <li><span class="tips-icon">↔</span><span><strong>左右滑动</strong><br>切换三条跑道，选择自己的金币路线。</span></li>
-                <li><span class="tips-icon">↑ ↓</span><span><strong>上下滑动</strong><br>向上跳过矮路障取金币；向下滑铲钻过横杆取金币。</span></li>
-                <li><span class="tips-icon">🪙</span><span><strong>跳上货车，收集金币</strong><br>上滑跳上车顶，沿车顶收集金币；双倍期间每枚计 2 金币。</span></li>
-                <li><span class="tips-icon">🔥</span><span><strong>火焰技能 · 双击屏幕</strong><br>持续 15 秒，抵挡一次碰撞；结束后冷却 5 秒，左上方显示剩余时间。</span></li>
+                <li><span class="tips-icon">↔</span><span><strong>左右滑动</strong><br>切换跑道，选择路线。</span></li>
+                <li><span class="tips-icon">↑ ↓</span><span><strong>上下滑动</strong><br>向上跳过/向下滑铲</span></li>
+                <li><span class="tips-icon">🪙</span><span><strong>跳上货车</strong><br>上滑跳上车顶</span></li>
+                <li><span class="tips-icon">🔥</span><span><strong>火焰技能 · 双击屏幕</strong><br>持续 15 秒，冷却 5 秒。</span></li>
             </ul>
-            <p class="tips-footnote">开跑前有 3 秒准备；速度和障碍密度会逐渐增加。</p>
-            <button id="btn-start-run" type="button">知道了，开始跑酷</button>
+            <p class="tips-footnote">倒计时</p>
+            <button id="btn-start-run" type="button">Start</button>
         </div>
     </div>
 </div>
@@ -779,7 +779,7 @@ function playSynth(name) {
     if (synthCtx.state === 'suspended') synthCtx.resume();
     const t = synthCtx.currentTime;
     if (name === 'flameStart' || name === 'obstacleBreak') {
-        // 短促点火 / 干脆碎裂：复用噪声缓冲，无需加载额外音频文件。
+        // 无需加载额外音频文件。
         const breaking = name === 'obstacleBreak';
         const duration = breaking ? 0.30 : 0.22;
         if (!shortNoiseBuffer || shortNoiseBuffer.sampleRate !== synthCtx.sampleRate) {
@@ -823,7 +823,7 @@ function playSynth(name) {
         return;
     }
     if (name === 'doubleCoins') {
-        // 双倍金币专用短提示：两个轻快音符，总长 215 ms，淡入淡出避免爆音。
+        // 双倍金币专用短提示。
         for (const [index, frequency] of [880, 1320].entries()) {
             const start = t + index * 0.085;
             const note = synthCtx.createOscillator();
@@ -1281,7 +1281,7 @@ function updateBuffUI() {
 }
 
 // ============================================================================
-// 核心渲染函数 (全套素材接入 + 背景横屏无缝循环播放)
+// 核心渲染函数
 // ============================================================================
 // 远处先从路面露出，进入判断距离前已完整显示；与帧率无关。
 const ROAD_FAR_Z=2800;
