@@ -60,6 +60,48 @@
             box-shadow: 0 14px 35px rgba(0, 0, 0, .20);
         }
         .countdown-hint { color: #fff8e8; font-size: 13px; letter-spacing: 1px; }
+        /* 音乐设置：收起时只占一个小按钮，滑块保留足够的触摸高度。 */
+        #music-control {
+            position:absolute; top:max(16px,env(safe-area-inset-top)); right:18px;
+            z-index:45; font-family:"PingFang SC","Microsoft YaHei",sans-serif;
+        }
+        #music-toggle {
+            display:flex; align-items:center; justify-content:center; gap:5px;
+            min-width:62px; min-height:44px; margin-left:auto; padding:0 10px;
+            border:1px solid #daceba; border-radius:15px;
+            background:rgba(255,249,237,.96); color:#655342;
+            box-shadow:0 3px 12px rgba(37,30,21,.12); cursor:pointer;
+            font:600 12px "PingFang SC","Microsoft YaHei",sans-serif;
+            touch-action:manipulation;
+        }
+        #music-toggle[aria-expanded="true"] {border-color:#d7934d; background:#fff0d8;}
+        #music-toggle svg {width:18px; height:18px; flex-shrink:0;}
+        #music-panel {
+            width:min(220px,calc(100vw - 36px)); margin-top:8px; padding:14px 16px 8px;
+            border:1px solid #dfd0b9; border-radius:17px; background:#fff9ed;
+            box-shadow:0 8px 24px rgba(37,30,21,.18); color:#655342;
+        }
+        #music-panel[hidden] {display:none;}
+        .music-label {display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:13px; font-weight:650;}
+        #bgm-volume-value {font-size:12px; font-variant-numeric:tabular-nums; color:#a27443;}
+        #bgm-volume {
+            display:block; width:100%; height:44px; margin:3px 0 0;
+            appearance:none; -webkit-appearance:none; background:transparent; cursor:pointer;
+            touch-action:none; --volume-fill:35%;
+        }
+        #bgm-volume::-webkit-slider-runnable-track {
+            height:6px; border-radius:6px;
+            background:linear-gradient(to right,#d98b43 0%,#d98b43 var(--volume-fill),#e7ddcc var(--volume-fill),#e7ddcc 100%);
+        }
+        #bgm-volume::-webkit-slider-thumb {
+            appearance:none; -webkit-appearance:none; width:24px; height:24px; margin-top:-9px;
+            border:2px solid #d98b43; border-radius:50%; background:#fffdf7;
+            box-shadow:0 2px 6px rgba(86,57,24,.18);
+        }
+        #bgm-volume::-moz-range-track {height:6px; border-radius:6px; background:#e7ddcc;}
+        #bgm-volume::-moz-range-progress {height:6px; border-radius:6px; background:#d98b43;}
+        #bgm-volume::-moz-range-thumb {width:21px; height:21px; border:2px solid #d98b43; border-radius:50%; background:#fffdf7;}
+        #bgm-volume:focus-visible,#music-toggle:focus-visible {outline:2px solid #b97735; outline-offset:4px;}
         /* 顶部 HUD */
         #hud {
             position: absolute;
@@ -348,7 +390,7 @@
             font-family:"PingFang SC","Microsoft YaHei",sans-serif;
         }
         .result-scroll {flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:24px 22px 18px;}
-        .result-brand {display:flex; align-items:center; gap:10px; margin-bottom:18px;}
+        .result-brand {padding-right:66px;display:flex; align-items:center; gap:10px; margin-bottom:18px;}
         .result-brand img {width:42px; height:42px; border-radius:50%; border:1.5px solid #e9703a; padding:2px; background:#fff;}
         .result-brand strong {display:block; font-size:16px; letter-spacing:.2px;}
         .result-brand span {display:block; margin-top:3px; font-size:11px; color:#a08d78; letter-spacing:2px;}
@@ -418,6 +460,16 @@
         </div>
     </div>
 
+    <div id="music-control">
+        <button id="music-toggle" type="button" aria-label="背景音乐音量设置" aria-controls="music-panel" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/></svg>
+            <span id="music-toggle-label">音乐</span>
+        </button>
+        <div id="music-panel" hidden>
+            <div class="music-label"><label for="bgm-volume">背景音乐</label><output id="bgm-volume-value" for="bgm-volume">35%</output></div>
+            <input id="bgm-volume" type="range" min="0" max="100" step="1" value="35" aria-valuetext="35%">
+        </div>
+    </div>
     <div id="buff-container"></div>
     <div id="countdown-overlay" aria-live="polite" aria-label="开跑倒计时">
         <span class="countdown-label">准备出发</span>
@@ -645,6 +697,69 @@ for (let key in soundFiles) {
 const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
 let synthCtx = null;
 let shortNoiseBuffer = null;
+const BGM_VOLUME_KEY='runningmiao-bgm-volume';
+let bgmVolume=0.35, bgmGain=null, bgmSource=null;
+try {
+    const stored=localStorage.getItem(BGM_VOLUME_KEY);
+    if(stored!==null && stored.trim()!=='' && Number.isFinite(Number(stored)))
+        bgmVolume=Math.max(0,Math.min(1,Number(stored)));
+} catch(e) { /* 隐私模式下仍可调音量。 */ }
+const musicControl=document.getElementById('music-control');
+const musicToggle=document.getElementById('music-toggle');
+const musicPanel=document.getElementById('music-panel');
+const bgmVolumeSlider=document.getElementById('bgm-volume');
+function applyBgmVolume(value) {
+    if(!Number.isFinite(value)) return;
+    bgmVolume=Math.max(0,Math.min(1,value));
+    backgroundMusic.muted=bgmVolume===0;
+    if(bgmGain && synthCtx) {
+        bgmGain.gain.cancelScheduledValues(synthCtx.currentTime);
+        bgmGain.gain.setTargetAtTime(bgmVolume,synthCtx.currentTime,0.025);
+    } else backgroundMusic.volume=bgmVolume;
+    const percent=Math.round(bgmVolume*100);
+    bgmVolumeSlider.value=String(percent);
+    bgmVolumeSlider.style.setProperty('--volume-fill',percent+'%');
+    bgmVolumeSlider.setAttribute('aria-valuetext',percent===0?'静音':percent+'%');
+    document.getElementById('bgm-volume-value').textContent=percent===0?'静音':percent+'%';
+    document.getElementById('music-toggle-label').textContent=percent===0?'静音':'音乐';
+}
+function connectBgmGain() {
+    // 手机网页通过独立增益调 BGM；金币、碰撞等音效继续使用原音量。
+    // 本地 file 预览沿用媒体音量，避免媒体源的跨源限制使音乐静音。
+    if(bgmGain || !synthCtx || location.protocol==='file:') return;
+    try {
+        const gain=synthCtx.createGain();
+        gain.gain.value=bgmVolume;
+        bgmSource=synthCtx.createMediaElementSource(backgroundMusic);
+        bgmSource.connect(gain); gain.connect(synthCtx.destination);
+        bgmGain=gain;
+        backgroundMusic.volume=1;
+    } catch(e) {
+        if(bgmSource) {bgmSource.disconnect();bgmSource.connect(synthCtx.destination);}
+        backgroundMusic.volume=bgmVolume;
+    }
+}
+function closeMusicPanel() {
+    musicPanel.hidden=true;
+    musicToggle.setAttribute('aria-expanded','false');
+}
+musicToggle.addEventListener('click',()=>{
+    const expanded=musicPanel.hidden;
+    musicPanel.hidden=!expanded;
+    musicToggle.setAttribute('aria-expanded',String(expanded));
+});
+bgmVolumeSlider.addEventListener('input',()=>applyBgmVolume(Number(bgmVolumeSlider.value)/100));
+bgmVolumeSlider.addEventListener('change',()=>{
+    try {localStorage.setItem(BGM_VOLUME_KEY,String(bgmVolume));} catch(e) {}
+});
+musicControl.addEventListener('keydown',e=>{
+    e.stopPropagation();
+    if(e.key==='Escape') {closeMusicPanel();musicToggle.focus();}
+});
+document.addEventListener('pointerdown',e=>{
+    if(!musicControl.contains(e.target)) closeMusicPanel();
+});
+applyBgmVolume(bgmVolume);
 function playAudio(name) {
     if (audioCache[name]) {
         try {
@@ -1904,6 +2019,7 @@ function loop(now) {
 document.addEventListener('visibilitychange',()=>{lastTick=performance.now();});
 
 function startRun() {
+    closeMusicPanel();
     closeResults();
     overlay.style.display = 'none';
     tipsOverlay.style.display = 'none';
@@ -1917,6 +2033,7 @@ function startRun() {
     touchId=null;lastTapTime=0;
     if (!synthCtx && AudioCtxClass) synthCtx = new AudioCtxClass();
     if (synthCtx?.state==='suspended') synthCtx.resume();
+    connectBgmGain();
     backgroundMusic.play().catch(() => {});
 }
 
